@@ -9,7 +9,7 @@
 import {
   clampNumber,
   rangesOverlap,
-  getNodeBounds,
+  getNodeBounds as getNodeBoundsMath,
   buildDimensionClusters,
   pickNearestMoveCluster,
   pickDirectionalCluster,
@@ -38,6 +38,27 @@ import { onAnySettingChanged } from './settings-events.js';
 
 const V2_ADAPTER_VERSION = "2.0.0";
 const CONNECTOR_FAN_SPACING = 9;
+
+// ============================================================================
+// V2 Bounding Box helper - Accounts for V2 card's 40px title bar height
+// ============================================================================
+function getNodeBounds(node) {
+  if (!node || !node.pos || !node.size) return null;
+  const left = Number(node.pos[0]) || 0;
+  const top = Number(node.pos[1]) || 0;
+  const width = Math.max(0, Number(node.size[0]) || 0);
+  const contentHeight = Math.max(0, Number(node.size[1]) || 0);
+  const totalHeight = contentHeight + 40;
+
+  return {
+    left: left,
+    right: left + width,
+    top: top,
+    bottom: top + totalHeight,
+    centerX: left + width * 0.5,
+    centerY: top + (totalHeight * 0.5),
+  };
+}
 
 // ============================================================================
 // Focus State Management
