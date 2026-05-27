@@ -310,14 +310,14 @@ function arrangeSelection(canvas) {
   const math = window.BlockSpaceCoreMath;
   const hMargin = math ? math.getHSnapMargin() : 60;
   const vMargin = math ? math.getVSnapMargin() : 40;
-  const titleH = Number(window.LiteGraph?.NODE_TITLE_HEIGHT) || 24;
   const isV2 = window.BlockSpaceAdapterMode === "v2" ||
                (typeof window.BlockSpaceDetect === "function" && window.BlockSpaceDetect() === "v2") ||
                (typeof document !== "undefined" && document.querySelector("[data-node-id]") !== null);
+  const titleH = isV2 ? 40 : (Number(window.LiteGraph?.NODE_TITLE_HEIGHT) || 24);
 
-  const getNodeBounds = math ? math.getNodeBounds : (node) => {
+  const getNodeBounds = (node) => {
     if (!node || !node.pos || !node.size) return null;
-    const h = isV2 ? 0 : titleH;
+    const h = titleH;
     return {
       left: node.pos[0],
       right: node.pos[0] + node.size[0],
@@ -416,7 +416,7 @@ function arrangeSelection(canvas) {
       sec.node.pos = [startX, currentY];
       sec.node.size = [globalMaxWidth, sec.node.size[1]];
       
-      currentY += sec.node.size[1] + (isV2 ? 0 : titleH) + vMargin;
+      currentY += sec.node.size[1] + titleH + vMargin;
     } else {
       const cols = sec.columns;
       const numCols = cols.length;
@@ -432,7 +432,7 @@ function arrangeSelection(canvas) {
         let colNaturalHeight = (col.length - 1) * vMargin;
         col.forEach(n => {
            const b = getNodeBounds(n);
-           colNaturalHeight += b ? (b.bottom - b.top) : (n.size[1] + (isV2 ? 0 : titleH));
+           colNaturalHeight += b ? (b.bottom - b.top) : (n.size[1] + titleH);
         });
         if (colNaturalHeight > maxColHeight) maxColHeight = colNaturalHeight;
       });
@@ -451,7 +451,7 @@ function arrangeSelection(canvas) {
         // --- NODE HEIGHT PROPORTIONS ---
         const nodeNaturalHeights = col.map(n => {
           const b = getNodeBounds(n);
-          return b ? (b.bottom - b.top) : (n.size[1] + (isV2 ? 0 : titleH));
+          return b ? (b.bottom - b.top) : (n.size[1] + titleH);
         });
         const totalNaturalHeight = nodeNaturalHeights.reduce((sum, h) => sum + h, 0);
         const targetAvailableHeight = maxColHeight - (numNodes - 1) * vMargin;
@@ -461,13 +461,13 @@ function arrangeSelection(canvas) {
           const node = col[j];
           
           // Determine this specific node's proportional height
-          // Decouple Nodes 2.0 (V2) from legacy V1 to prevent vertical stretching in modern UI
-          const targetNodeHeight = (isV2 || totalNaturalHeight === 0)
+          // Enable vertical stretching for both V1 and V2 to keep the grid squared
+          const targetNodeHeight = (totalNaturalHeight === 0)
               ? nodeNaturalHeights[j]
               : (nodeNaturalHeights[j] / totalNaturalHeight) * targetAvailableHeight;
 
           node.pos = [currentX, colY];
-          node.size = [targetColWidth, Math.max(10, targetNodeHeight - (isV2 ? 0 : titleH))];
+          node.size = [targetColWidth, Math.max(10, targetNodeHeight - titleH)];
 
           colY += targetNodeHeight + vMargin;
         }
