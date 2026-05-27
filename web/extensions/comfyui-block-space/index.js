@@ -315,8 +315,54 @@ function arrangeSelection(canvas) {
                (typeof window.BlockSpaceDetect === "function" && window.BlockSpaceDetect() === "v2") ||
                (typeof document !== "undefined" && document.querySelector("[data-node-id]") !== null);
 
-  const getNodeBounds = math ? math.getNodeBounds : (node) => {
-    if (!node || !node.pos || !node.size) return null;
+  const getNodeBounds = (node) => {
+    if (!node) return null;
+    if (isV2) {
+      const el = document.querySelector(`[data-node-id="${node.id}"]`);
+      if (el && canvas) {
+        const rect = el.getBoundingClientRect();
+        const scale = canvas.ds?.scale || 1;
+        const offset = canvas.ds?.offset || [0, 0];
+        
+        let tl = null;
+        let br = null;
+        if (window.app?.positionConversion?.clientPosToCanvasPos) {
+          const tlRes = window.app.positionConversion.clientPosToCanvasPos([rect.left, rect.top]);
+          const brRes = window.app.positionConversion.clientPosToCanvasPos([rect.right, rect.bottom]);
+          tl = { x: tlRes[0], y: tlRes[1] };
+          br = { x: brRes[0], y: brRes[1] };
+        } else {
+          const canvasRect = canvas.canvas.getBoundingClientRect();
+          tl = {
+            x: (rect.left - canvasRect.left) / scale - offset[0],
+            y: (rect.top - canvasRect.top) / scale - offset[1]
+          };
+          br = {
+            x: (rect.right - canvasRect.left) / scale - offset[0],
+            y: (rect.bottom - canvasRect.top) / scale - offset[1]
+          };
+        }
+        
+        if (tl && br) {
+          const w = br.x - tl.x;
+          const h = br.y - tl.y;
+          return {
+            left: tl.x,
+            right: br.x,
+            top: tl.y,
+            bottom: br.y,
+            centerX: tl.x + w * 0.5,
+            centerY: tl.y + h * 0.5
+          };
+        }
+      }
+    }
+    
+    // Fallback/V1 logic using math module or simple logic
+    if (math?.getNodeBounds) {
+      return math.getNodeBounds(node);
+    }
+    if (!node.pos || !node.size) return null;
     const h = isV2 ? 0 : titleH;
     return {
       left: node.pos[0],
