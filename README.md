@@ -1,4 +1,4 @@
-# ComfyUI-Block-Space 🧱
+# ComfyUI-Block-Space <img src="assets/logo.svg" alt="Logo" width="32" height="32" align="center">
 
 A Figma-style layout and snapping engine for the ComfyUI canvas. 
 
@@ -80,19 +80,22 @@ Customize your experience with an intuitive settings interface.
 
 ## 🏗️ Architecture
 
-Block Space uses an **Adapter Pattern** to support both the classic ComfyUI (V1/LiteGraph) and the upcoming Vue-based interface (V2).
+Block Space uses a highly refined **Adapter Pattern** to dynamically support both the classic ComfyUI (V1/LiteGraph) and the modern Vue-based DOM interface (Nodes 2.0 / V2).
 
 ### File Structure
 
 ```
 web/
-├── index.js              # Entry point - detects V1/V2 and loads appropriate adapter
-├── core-math.js          # Pure spatial logic (V1/V2 agnostic)
-├── adapter-v1.js         # V1 integration (LiteGraph canvas)
-├── better-nodes-settings.js  # Settings storage utility
+├── index.js              # Entry point - loads settings and bootstraps environment
+├── adapter-detector.js   # Version detector: automatically polls and manages transitions
+├── core-math.js          # Pure spatial logic, clustering, and bounding box conversions
+├── adapter-v1.js         # V1 integration (LiteGraph canvas-rendered patches)
+├── adapter-v2.js         # Nodes 2.0 (V2) integration (Vue DOM interceptors and outlines)
+├── settings-events.js    # Pub/Sub event communication layer for real-time settings
+├── better-nodes-settings.js  # Settings persistence utility
 └── extensions/
     └── comfyui-block-space/
-        └── index.js      # Extension registration
+        └── index.js      # Main extension registration & Harmonize grid layout engine
 ```
 
 ### Core Components
@@ -100,19 +103,42 @@ web/
 | Module | Purpose |
 |--------|---------|
 | **core-math.js** | Pure spatial calculations: bounds, clustering, raycasting. No UI dependencies. |
-| **adapter-v1.js** | V1 integration: patches `LGraphCanvas`, handles DOM overlays, manages state. |
-| **index.js** | Environment detection and adapter loading. |
+| **adapter-detector.js** | Version detector: polls async DOM nodes to trigger seamless adapter transitions. |
+| **adapter-v1.js** | V1 integration: patches `LGraphCanvas`, handles canvas overlays, manages state. |
+| **adapter-v2.js** | V2 integration: hooks event loops, intercepts pointer actions, projects DOM outlines. |
+| **extensions/** | Main extension bootstrap: implements unified Harmonize grid math and native tooltips. |
 
 ### V1/V2 Compatibility
 
-- **V1 (Current):** Full support via `adapter-v1.js`
-- **V2 (Future):** Architecture ready for Vue/DOM adapter
+- **V1 (LiteGraph):** Full, high-fidelity support via `adapter-v1.js`.
+- **V2 (Nodes 2.0):** Full production-ready support via `adapter-v2.js`.
 
-The extension automatically detects the ComfyUI version and loads the appropriate adapter.
+The extension automatically detects the ComfyUI version at runtime and handles the loading lifecycle seamlessly.
 
 ---
 
 ## 📋 Changelog
+
+### v2.0.0 (Nodes 2.0 Major Update)
+
+**Nodes 2.0 (V2) Production Integration**
+- Full support for the modern ComfyUI Nodes 2.0 Vue/DOM-rendered interface.
+- Scaled move and resize snap aggressiveness thresholds by `1.5x` in V2 for highly responsive alignment guides.
+- Overrode bounding calculations to eliminate outlines coordinate offsets, achieving flush, pixel-perfect top alignment.
+
+**Unified Layout Harmonization & Spacing**
+- Re-engineered the **Harmonize Block** grid layout engine to mathematically unify V1 and V2 calculations.
+- Factored in the V2 `40px` title bar height difference during bounds checking and model mutations to guarantee a perfect visual vertical spacing gap (matching the user's `vMargin`).
+- Columns stretch and resize proportionally, squaring the grid perfectly while maintaining complete height mutation stability across multiple successive Harmonize clicks.
+
+**Pointerdown Snapping Engagement**
+- Implemented a boundary-aware cursor coordinates check fallback that intercepts pointer clicks inside active overlays, enabling snapping immediately on drag without needing on/off clicks to dismiss selection boxes.
+
+**Selection Shift Focus Preservation**
+- Filtered blur events on page inputs to prevent internal focus shifts from clearing active snapping memory, keeping snapping active when switching between node drags.
+
+**Pixel-Identical Toolbox Tooltips**
+- Injected premium HTML custom tooltips on the selection toolbox styled identically to native ComfyUI menus, including downward center triangular indicators and fade-in slide transitions.
 
 ### v1.0.5
 
