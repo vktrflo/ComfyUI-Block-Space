@@ -512,6 +512,7 @@ app.registerExtension({
         }
       ];
     }
+    return null;
   },
   getCanvasMenuItems(canvas) {
     const selected = app.canvas?.selected_nodes;
@@ -532,5 +533,6 @@ app.registerExtension({
         }
       ];
     }
+    return null;
   }
 });
