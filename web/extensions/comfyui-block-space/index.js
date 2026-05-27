@@ -492,8 +492,8 @@ app.registerExtension({
       id: "block-space.harmonize",
       label: "Harmonize Block",
       icon: "block-space-menu-icon",
-      tooltip: "Align and clean up selected node layout proportions into a grid (Ctrl+Shift+Space).",
-      description: "Align and clean up selected node layout proportions into a grid (Ctrl+Shift+Space).",
+      tooltip: "Align and clean up selected node layout proportions into a grid (Ctrl+Alt+Space).",
+      description: "Align and clean up selected node layout proportions into a grid (Ctrl+Alt+Space).",
       function: () => {
         if (app.canvas) arrangeSelection(app.canvas);
       }
@@ -535,12 +535,12 @@ app.registerExtension({
     registerBlockSpaceSettings();
     injectSettingsIcon();
 
-    // Keyboard shortcut (Ctrl+Shift+Spacebar) for Harmonize Selected Blocks layout
+    // Keyboard shortcut (Ctrl+Alt+Spacebar) for Harmonize Selected Blocks layout
     window.addEventListener("keydown", (e) => {
       if (
         e.ctrlKey &&
-        e.shiftKey &&
-        !e.altKey &&
+        e.altKey &&
+        !e.shiftKey &&
         !e.metaKey &&
         (e.code === "Space" || e.key === " " || e.keyCode === 32)
       ) {
@@ -609,7 +609,7 @@ app.registerExtension({
       if (icon) {
         const button = (typeof icon.closest === "function" && icon.closest("button")) || icon;
         if (button) {
-          showTooltip(button, "Harmonize Selected Blocks (Ctrl+Shift+Space)\nAlign and clean up selected node layout proportions into a grid.");
+          showTooltip(button, "Harmonize Selected Blocks (Ctrl+Alt+Space)\nAlign and clean up selected node layout proportions into a grid.");
         }
       }
     }, true);
@@ -631,7 +631,7 @@ app.registerExtension({
     if (selected && Object.keys(selected).length > 1 && selected[node.id]) {
       return [
         {
-          content: `<span title="Align and clean up selected node layout proportions into a grid (Ctrl+Shift+Space)." style="display:inline-flex;align-items:center;font-weight:bold;">
+          content: `<span title="Align and clean up selected node layout proportions into a grid (Ctrl+Alt+Space)." style="display:inline-flex;align-items:center;font-weight:bold;">
             <svg class="block-space-nav-icon" viewBox="0 0 24 24" fill="none" style="width:16px;height:16px;margin-right:8px;vertical-align:middle;display:inline-block;">
               <path d="M4 4H10V10H4V4Z" fill="#57b1ff" rx="1"/>
               <path d="M14 14H20V20H14V14Z" fill="#8dff57" rx="1"/>
@@ -652,7 +652,7 @@ app.registerExtension({
     if (selected && Object.keys(selected).length > 1) {
       return [
         {
-          content: `<span title="Align and clean up selected node layout proportions into a grid (Ctrl+Shift+Space)." style="display:inline-flex;align-items:center;font-weight:bold;">
+          content: `<span title="Align and clean up selected node layout proportions into a grid (Ctrl+Alt+Space)." style="display:inline-flex;align-items:center;font-weight:bold;">
             <svg class="block-space-nav-icon" viewBox="0 0 24 24" fill="none" style="width:16px;height:16px;margin-right:8px;vertical-align:middle;display:inline-block;">
               <path d="M4 4H10V10H4V4Z" fill="#57b1ff" rx="1"/>
               <path d="M14 14H20V20H14V14Z" fill="#8dff57" rx="1"/>

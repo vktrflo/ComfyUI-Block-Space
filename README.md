@@ -38,7 +38,7 @@ Precision snapping that understands the visual geometry of your nodes.
 ![Snapping & Harmonizing](assets/snap-harmonize.gif)
 
 - **True Margins:** Snapping is 100% accurate to your settings, correctly accounting for node title bars so your gaps are always exactly the number of pixels you intended.
-- **Harmonize Action:** Instantly transform messy node clusters into perfectly aligned blocks. Our intelligent layout engine detects columns, enforces uniform widths, and balances heights for a professional, "boxed" look. You can trigger this from the node/canvas context menus, the selection toolbox, or via the **Ctrl + Shift + Space** keyboard shortcut (whenever more than 1 node is selected).
+- **Harmonize Action:** Instantly transform messy node clusters into perfectly aligned blocks. Our intelligent layout engine detects columns, enforces uniform widths, and balances heights for a professional, "boxed" look. You can trigger this from the node/canvas context menus, the selection toolbox, or via the **Ctrl + Alt + Space** keyboard shortcut (whenever more than 1 node is selected).
 - **Visual Guides:** Dotted alignment lines appear during drags and resizes to frame your nodes and show exactly which edges are being aligned.
 
 ## 2. Animated Flow Visualization
