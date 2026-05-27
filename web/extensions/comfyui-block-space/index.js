@@ -374,9 +374,8 @@ function arrangeSelection(canvas) {
 
   for (const sec of sections) {
     if (sec.type === 'spanning') {
-      sec.node.pos[0] = startX;
-      sec.node.pos[1] = currentY;
-      sec.node.size[0] = globalMaxWidth;
+      sec.node.pos = [startX, currentY];
+      sec.node.size = [globalMaxWidth, sec.node.size[1]];
       
       currentY += sec.node.size[1] + titleH + vMargin;
     } else {
@@ -427,10 +426,8 @@ function arrangeSelection(canvas) {
               ? targetAvailableHeight / numNodes 
               : (nodeNaturalHeights[j] / totalNaturalHeight) * targetAvailableHeight;
 
-          node.pos[0] = currentX;
-          node.pos[1] = colY;
-          node.size[0] = targetColWidth;
-          node.size[1] = Math.max(10, targetNodeHeight - titleH);
+          node.pos = [currentX, colY];
+          node.size = [targetColWidth, Math.max(10, targetNodeHeight - titleH)];
 
           colY += targetNodeHeight + vMargin;
         }
@@ -443,6 +440,9 @@ function arrangeSelection(canvas) {
   canvas.graph?.afterChange?.();
   canvas.dirty_canvas = true;
   canvas.dirty_bgcanvas = true;
+  if (canvas.setDirty) {
+    canvas.setDirty(true, true);
+  }
 }
 
 app.registerExtension({
