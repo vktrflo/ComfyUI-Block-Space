@@ -536,12 +536,10 @@ app.registerExtension({
     injectSettingsIcon();
 
     // Keyboard shortcut (Ctrl+Alt+Spacebar) for Harmonize Selected Blocks layout
-    window.addEventListener("keydown", (e) => {
+    document.addEventListener("keydown", (e) => {
       if (
         e.ctrlKey &&
         e.altKey &&
-        !e.shiftKey &&
-        !e.metaKey &&
         (e.code === "Space" || e.key === " " || e.keyCode === 32)
       ) {
         // Prevent triggering when typing in inputs/textareas
@@ -564,7 +562,7 @@ app.registerExtension({
           }
         }
       }
-    });
+    }, true);
 
     // Custom pixel-identical ComfyUI tooltip helper for the selection toolbox button
     let activeTooltip = null;
