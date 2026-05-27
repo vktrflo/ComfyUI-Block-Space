@@ -314,7 +314,7 @@ function applyResizeSnapping(canvas, resizingNode) {
   if (bestXWidth !== null && bestXDelta <= currentThresholdX) {
     const nextWidth = Math.max(minSize[0], bestXWidth);
     if (isFinite(nextWidth) && Math.abs(nextWidth - currentWidth) > 0.01) {
-      resizingNode.size[0] = Math.round(nextWidth);
+      resizingNode.size[0] = nextWidth;
       didSnap = true;
     }
   }
@@ -364,7 +364,7 @@ function applyResizeSnapping(canvas, resizingNode) {
   if (bestYHeight !== null && bestYDelta <= currentThresholdY) {
     const nextContentHeight = bestYHeight - titleH;
     if (isFinite(nextContentHeight) && Math.abs(nextContentHeight - resizingNode.size[1]) > 0.01) {
-      resizingNode.size[1] = Math.round(nextContentHeight);
+      resizingNode.size[1] = nextContentHeight;
       didSnap = true;
     }
   }
@@ -447,22 +447,22 @@ function maybeCommitSnapOnMouseUp(canvas, nodeHint) {
 
   if (snap.kind === "move") {
     if (snap.xDidSnap && typeof snap.xTarget === "number" && Math.abs(bounds.left - snap.xTarget) <= tolerance) {
-      node.pos[0] = Math.round(snap.xTarget);
+      node.pos[0] = snap.xTarget;
       appliedX = true;
     }
     if (snap.yDidSnap && typeof snap.yTarget === "number" && Math.abs(bounds.top - snap.yTarget) <= tolerance) {
-      node.pos[1] = Math.round(snap.yTarget);
+      node.pos[1] = snap.yTarget;
       appliedY = true;
     }
   } else if (snap.kind === "resize") {
     const minSize = getNodeMinSize(node);
     const titleH = Number(window.LiteGraph?.NODE_TITLE_HEIGHT) || 24;
     if (snap.xDidSnap && typeof snap.xTargetRight === "number" && Math.abs(bounds.right - snap.xTargetRight) <= tolerance) {
-      node.size[0] = Math.round(Math.max(minSize[0], snap.xTargetRight - bounds.left));
+      node.size[0] = Math.max(minSize[0], snap.xTargetRight - bounds.left);
       appliedX = true;
     }
     if (snap.yDidSnap && typeof snap.yTargetBottom === "number" && Math.abs(bounds.bottom - snap.yTargetBottom) <= tolerance) {
-      node.size[1] = Math.round((snap.yTargetBottom - bounds.top) - titleH);
+      node.size[1] = (snap.yTargetBottom - bounds.top) - titleH;
       appliedY = true;
     }
   }
@@ -1158,428 +1158,9 @@ function createAmbiguityMenu(params) {
   activeMenuCleanup = cleanupMenu;
 }
 
-// ============================================================================
-// Smart Sizing Functions
-// ============================================================================
+// Smart Sizing feature removed from stable V1 adapter as per user specifications.
 
-const MIN_NODE_WIDTH = 150;
-const MAX_TEXT_WIDTH = 250;
-const PORT_PADDING = 40;
-
-let measureCanvas = null;
-let measureCtx = null;
-
-function getMeasureCtx() {
-  if (!measureCanvas) {
-    measureCanvas = document.createElement("canvas");
-    measureCtx = measureCanvas.getContext("2d");
-  }
-  return measureCtx;
-}
-
-function getNodeFont() {
-  return ((window.LiteGraph?.NODE_TEXT_SIZE) || 14) + "px Arial";
-}
-
-function measureTextWidth(text) {
-  const ctx = getMeasureCtx();
-  if (!ctx || !text) return 0;
-  ctx.font = getNodeFont();
-  return ctx.measureText(String(text)).width;
-}
-
-function truncateToWidth(text, maxWidth) {
-  if (text == null) return "";
-  const value = String(text);
-  if (!value || measureTextWidth(value) <= maxWidth) return value;
-  const ellipsis = "...";
-  const ellipsisWidth = measureTextWidth(ellipsis);
-  if (ellipsisWidth >= maxWidth) return ellipsis;
-
-  let left = 0, right = value.length;
-  while (left < right) {
-    const mid = Math.ceil((left + right) / 2);
-    if (measureTextWidth(value.slice(0, mid) + ellipsis) <= maxWidth) left = mid;
-    else right = mid - 1;
-  }
-  return value.slice(0, left) + ellipsis;
-}
-
-function getSlotText(slot) {
-  return slot?.label != null ? slot.label : slot?.name || "";
-}
-
-function getSlotMaxWidth(slots) {
-  if (!Array.isArray(slots) || !slots.length) return 0;
-  let maxWidth = 0;
-  for (const slot of slots) {
-    const text = truncateToWidth(getSlotText(slot), MAX_TEXT_WIDTH);
-    maxWidth = Math.max(maxWidth, Math.min(MAX_TEXT_WIDTH, measureTextWidth(text)));
-  }
-  return maxWidth;
-}
-
-function getWidgetSize(widget, currentWidth) {
-  if (!widget) return [0, 0];
-  let size = null;
-  if (typeof widget.computeSize === "function") {
-    try { size = widget.computeSize(currentWidth); } catch (e) {}
-  }
-  if (!size || size.length < 2) {
-    const options = widget.options || {};
-    size = [
-      widget.width || options.width || options.w || 0,
-      widget.height || options.height || options.h || window.LiteGraph?.NODE_WIDGET_HEIGHT || 20
-    ];
-  }
-  return [Math.max(0, Number(size[0]) || 0), Math.max(0, Number(size[1]) || 0)];
-}
-
-function computeWidgetBounds(node, startWidth) {
-  if (!Array.isArray(node.widgets) || !node.widgets.length) return { width: 0, height: 0 };
-  let maxWidth = 0, totalHeight = 0;
-  for (const widget of node.widgets) {
-    const size = getWidgetSize(widget, startWidth);
-    maxWidth = Math.max(maxWidth, size[0]);
-    totalHeight += size[1] + 4;
-  }
-  return { width: maxWidth, height: totalHeight + 8 };
-}
-
-function applyTruncatedLabelsTemporarily(node) {
-  const restorations = [];
-  if (!node) return restorations;
-
-  function storeAndAssign(target, key, value) {
-    restorations.push({ target, key, hadOwn: Object.prototype.hasOwnProperty.call(target, key), previous: target[key] });
-    target[key] = value;
-  }
-
-  storeAndAssign(node, "title", truncateToWidth(node.title || "", MAX_TEXT_WIDTH));
-
-  const slots = [...(node.inputs || []), ...(node.outputs || [])];
-  for (const slot of slots) {
-    if (!slot) continue;
-    const truncated = truncateToWidth(getSlotText(slot), MAX_TEXT_WIDTH);
-    storeAndAssign(slot, "label", truncated);
-    slot.__smartDisplayLabel = truncated;
-  }
-
-  return restorations;
-}
-
-function restoreTemporaryValues(restorations) {
-  if (!restorations?.length) return;
-  for (let i = restorations.length - 1; i >= 0; i--) {
-    const item = restorations[i];
-    if (!item.hadOwn) delete item.target[item.key];
-    else item.target[item.key] = item.previous;
-  }
-}
-
-// ============================================================================
-// Node Arrangement Functions
-// ============================================================================
-
-let arrangementPanel = null;
-const ARRANGEMENT_STORAGE_KEY = "block-space-arrangement-panel-pos";
-
-function arrangeSelection(canvas, mode) {
-  const selected = canvas.selected_nodes;
-  if (!selected) return;
-
-  const nodes = Object.values(selected).filter(n => n?.pos && n?.size);
-  if (nodes.length < 2) return;
-
-  canvas.graph?.beforeChange?.();
-
-  const hMargin = getHSnapMargin();
-  const vMargin = getVSnapMargin();
-  const titleH = Number(window.LiteGraph?.NODE_TITLE_HEIGHT) || 24;
-
-  const anchor = [...nodes].sort((a, b) => Math.abs(a.pos[1] - b.pos[1]) > 50 ? a.pos[1] - b.pos[1] : a.pos[0] - b.pos[0])[0];
-  const startX = anchor.pos[0];
-  const startY = anchor.pos[1];
-
-  if (mode === "grid") {
-    // --- HYBRID BLOCK-GRID ALGORITHM (FULL PROPORTIONAL WIDTH & HEIGHT) ---
-
-    // 1. Identify Layout Bounds to detect wide "Spanning" nodes
-    let minX = Infinity, maxX = -Infinity;
-    nodes.forEach(n => {
-      const b = getNodeBounds(n);
-      if (b) {
-        if (b.left < minX) minX = b.left;
-        if (b.right > maxX) maxX = b.right;
-      }
-    });
-    const totalSpan = maxX - minX;
-
-    // 2. Sort nodes Top-to-Bottom
-    const sortedNodes = [...nodes].sort((a, b) => a.pos[1] - b.pos[1]);
-
-    // 3. Partition into Sections (Spanning vs Grid Block)
-    const sections = [];
-    let currentGridNodes = [];
-
-    for (const node of sortedNodes) {
-      const isSpanning = node.size[0] > totalSpan * 0.6;
-      if (isSpanning) {
-        if (currentGridNodes.length > 0) {
-          sections.push({ type: 'grid', nodes: currentGridNodes });
-          currentGridNodes = [];
-        }
-        sections.push({ type: 'spanning', node: node });
-      } else {
-        currentGridNodes.push(node);
-      }
-    }
-    if (currentGridNodes.length > 0) {
-      sections.push({ type: 'grid', nodes: currentGridNodes });
-    }
-
-    // 4. Process Grid Sections & Find Target Global Width
-    let globalMaxWidth = 0;
-
-    for (const sec of sections) {
-      if (sec.type === 'spanning') {
-        const w = sec.node.size[0];
-        if (w > globalMaxWidth) globalMaxWidth = w;
-      } else {
-        // Group grid nodes into columns
-        const cols = [];
-        const sortedByX = [...sec.nodes].sort((a, b) => a.pos[0] - b.pos[0]);
-        for (const n of sortedByX) {
-          let placed = false;
-          for (const col of cols) {
-            const avgX = col.reduce((sum, node) => sum + node.pos[0], 0) / col.length;
-            if (Math.abs(n.pos[0] - avgX) < 150) { 
-              col.push(n);
-              placed = true;
-              break;
-            }
-          }
-          if (!placed) cols.push([n]);
-        }
-        
-        cols.sort((a, b) => a[0].pos[0] - b[0].pos[0]);
-        cols.forEach(col => col.sort((a, b) => a.pos[1] - b.pos[1]));
-
-        sec.columns = cols;
-        
-        // Calculate natural section width
-        let naturalWidth = (cols.length - 1) * hMargin;
-        cols.forEach(col => {
-          const maxColWidth = Math.max(...col.map(n => n.size[0]));
-          naturalWidth += maxColWidth;
-        });
-
-        if (naturalWidth > globalMaxWidth) globalMaxWidth = naturalWidth;
-      }
-    }
-
-    // 5. Apply Layout with Proportional Scaling (Widths AND Heights)
-    let currentY = startY;
-
-    for (const sec of sections) {
-      if (sec.type === 'spanning') {
-        sec.node.pos[0] = Math.round(startX);
-        sec.node.pos[1] = Math.round(currentY);
-        sec.node.size[0] = Math.round(globalMaxWidth);
-        
-        currentY += sec.node.size[1] + titleH + vMargin;
-      } else {
-        const cols = sec.columns;
-        const numCols = cols.length;
-        
-        // --- COLUMN WIDTH PROPORTIONS ---
-        const colNaturalWidths = cols.map(col => Math.max(...col.map(n => n.size[0])));
-        const totalNaturalWidth = colNaturalWidths.reduce((sum, w) => sum + w, 0);
-        const targetAvailableWidth = globalMaxWidth - (numCols - 1) * hMargin;
-
-        // --- FIND TARGET BLOCK HEIGHT ---
-        let maxColHeight = 0;
-        cols.forEach(col => {
-          let colNaturalHeight = (col.length - 1) * vMargin;
-          col.forEach(n => {
-             const b = getNodeBounds(n);
-             colNaturalHeight += b ? (b.bottom - b.top) : (n.size[1] + titleH);
-          });
-          if (colNaturalHeight > maxColHeight) maxColHeight = colNaturalHeight;
-        });
-
-        // Layout columns
-        let currentX = startX;
-        for (let i = 0; i < cols.length; i++) {
-          const col = cols[i];
-          const numNodes = col.length;
-          
-          // Determine this column's proportional width
-          const targetColWidth = totalNaturalWidth === 0 
-              ? targetAvailableWidth / numCols 
-              : (colNaturalWidths[i] / totalNaturalWidth) * targetAvailableWidth;
-
-          // --- NODE HEIGHT PROPORTIONS ---
-          const nodeNaturalHeights = col.map(n => {
-            const b = getNodeBounds(n);
-            return b ? (b.bottom - b.top) : (n.size[1] + titleH);
-          });
-          const totalNaturalHeight = nodeNaturalHeights.reduce((sum, h) => sum + h, 0);
-          const targetAvailableHeight = maxColHeight - (numNodes - 1) * vMargin;
-
-          let colY = currentY;
-          for (let j = 0; j < numNodes; j++) {
-            const node = col[j];
-            
-            // Determine this specific node's proportional height
-            const targetNodeHeight = totalNaturalHeight === 0 
-                ? targetAvailableHeight / numNodes 
-                : (nodeNaturalHeights[j] / totalNaturalHeight) * targetAvailableHeight;
-
-            node.pos[0] = Math.round(currentX);
-            node.pos[1] = Math.round(colY);
-            node.size[0] = Math.round(targetColWidth);
-            node.size[1] = Math.round(Math.max(10, targetNodeHeight - titleH));
-
-            colY += targetNodeHeight + vMargin;
-          }
-          currentX += targetColWidth + hMargin;
-        }
-        currentY += maxColHeight + vMargin;
-      }
-    }
-
-  } else {
-    // --- STANDARD X / Y STACKING ---
-    for (let i = 1; i < nodes.length; i++) {
-      const prev = nodes[i - 1];
-      const node = nodes[i];
-      const prevBounds = getNodeBounds(prev);
-      if (mode === "y") {
-        node.pos[0] = Math.round(anchor.pos[0]);
-        node.pos[1] = Math.round(prevBounds.bottom + vMargin);
-      } else {
-        node.pos[1] = Math.round(anchor.pos[1]);
-        node.pos[0] = Math.round(prevBounds.right + hMargin);
-      }
-    }
-  }
-
-  canvas.graph?.afterChange?.();
-  canvas.dirty_canvas = true;
-  canvas.dirty_bgcanvas = true;
-}
-
-function createArrangementPanel() {
-  if (arrangementPanel) return arrangementPanel;
-
-  const existing = document.getElementById("block-space-arrangement-panel");
-  if (existing) {
-    arrangementPanel = existing;
-    return arrangementPanel;
-  }
-
-  arrangementPanel = document.createElement("div");
-  arrangementPanel.id = "block-space-arrangement-panel";
-  arrangementPanel.style.cssText = "position:fixed;background:rgba(30,30,30,0.95);border:1px solid #444;border-radius:8px;padding:8px 12px;display:none;flex-direction:row;gap:10px;align-items:center;box-shadow:0 4px 15px rgba(0,0,0,0.5);z-index:10000;transition:opacity 0.2s,transform 0.2s;pointer-events:auto;";
-
-  const savedPos = localStorage.getItem(ARRANGEMENT_STORAGE_KEY);
-  if (savedPos) {
-    try {
-      const pos = JSON.parse(savedPos);
-      arrangementPanel.style.left = pos.x + "px";
-      arrangementPanel.style.top = pos.y + "px";
-      arrangementPanel.style.transform = "none";
-    } catch(e) {
-      arrangementPanel.style.cssText += "top:20px;left:50%;transform:translateX(-50%);";
-    }
-  } else {
-    arrangementPanel.style.cssText += "top:20px;left:50%;transform:translateX(-50%);";
-  }
-
-  const handle = document.createElement("div");
-  handle.style.cssText = "display:flex;align-items:center;cursor:grab;user-select:none;margin-right:8px;padding-right:8px;border-right:1px solid #444;";
-  handle.innerHTML = `<span style="color:#666;font-size:14px;margin-right:6px;font-family:monospace;">⠿</span>
-    <svg viewBox="0 0 24 24" style="width:16px;height:16px;margin-right:8px;vertical-align:middle;">
-      <path d="M4 4H10V10H4V4Z" fill="#57b1ff"/><path d="M14 14H20V20H14V14Z" fill="#8dff57"/>
-      <path d="M14 4H20V10H14V4Z" fill="none" stroke="#57b1ff" stroke-width="2"/>
-      <path d="M4 14H10V20H4V14Z" fill="none" stroke="#8dff57" stroke-width="2"/>
-      <line x1="10" y1="10" x2="14" y2="14" stroke="#b57cff" stroke-width="2" stroke-linecap="round" stroke-dasharray="2 3"/>
-    </svg>
-    <span style="color:#888;font-size:11px;font-weight:bold;white-space:nowrap;">Block Space</span>`;
-  arrangementPanel.appendChild(handle);
-
-  let isDragging = false, offsetX, offsetY;
-  handle.onmousedown = (e) => {
-    isDragging = true;
-    handle.style.cursor = "grabbing";
-    const rect = arrangementPanel.getBoundingClientRect();
-    offsetX = e.clientX - rect.left;
-    offsetY = e.clientY - rect.top;
-    arrangementPanel.style.transition = "none";
-    e.preventDefault();
-  };
-
-  window.addEventListener("mousemove", (e) => {
-    if (!isDragging) return;
-    arrangementPanel.style.left = (e.clientX - offsetX) + "px";
-    arrangementPanel.style.top = (e.clientY - offsetY) + "px";
-    arrangementPanel.style.transform = "none";
-  });
-
-  window.addEventListener("mouseup", () => {
-    if (!isDragging) return;
-    isDragging = false;
-    handle.style.cursor = "grab";
-    arrangementPanel.style.transition = "opacity 0.2s,transform 0.2s";
-    const rect = arrangementPanel.getBoundingClientRect();
-    localStorage.setItem(ARRANGEMENT_STORAGE_KEY, JSON.stringify({ x: rect.left, y: rect.top }));
-  });
-
-  function createBtn(text, icon, callback) {
-    const btn = document.createElement("button");
-    btn.innerHTML = `<span style="margin-right:6px">${icon}</span>${text}`;
-    btn.style.cssText = "background:#333;color:#eee;border:1px solid #555;border-radius:4px;padding:6px 12px;cursor:pointer;font-size:12px;display:flex;align-items:center;transition:background 0.1s,border-color 0.1s;";
-    btn.onmouseenter = () => { btn.style.background = "#444"; btn.style.borderColor = "#777"; };
-    btn.onmouseleave = () => { btn.style.background = "#333"; btn.style.borderColor = "#555"; };
-    btn.onclick = callback;
-    return btn;
-  }
-
-  arrangementPanel.appendChild(createBtn("Stack", "↕️", () => window.app?.canvas && arrangeSelection(window.app.canvas, "y")));
-  arrangementPanel.appendChild(createBtn("Flow", "↔️", () => window.app?.canvas && arrangeSelection(window.app.canvas, "x")));
-  arrangementPanel.appendChild(createBtn("Harmonize", "💎", () => window.app?.canvas && arrangeSelection(window.app.canvas, "grid")));
-
-  document.body.appendChild(arrangementPanel);
-  return arrangementPanel;
-}
-
-function updatePanelVisibility() {
-  const canvas = window.app?.canvas;
-  if (!canvas) return;
-
-  const selectedCount = canvas.selected_nodes ? Object.keys(canvas.selected_nodes).length : 0;
-  const p = createArrangementPanel();
-
-  if (selectedCount > 1) {
-    if (p.style.display === "none") {
-      p.style.display = "flex";
-      p.style.opacity = "0";
-      if (!localStorage.getItem(ARRANGEMENT_STORAGE_KEY)) {
-        p.style.transform = "translateX(-50%) translateY(-10px)";
-        setTimeout(() => { p.style.opacity = "1"; p.style.transform = "translateX(-50%) translateY(0)"; }, 10);
-      } else {
-        setTimeout(() => p.style.opacity = "1", 10);
-      }
-    }
-  } else {
-    if (p.style.display === "flex") {
-      p.style.opacity = "0";
-      if (!localStorage.getItem(ARRANGEMENT_STORAGE_KEY)) p.style.transform = "translateX(-50%) translateY(-10px)";
-      setTimeout(() => p.style.display = "none", 200);
-    }
-  }
-}
+// Multi-node selection floating menu and arrangement logic removed as per user specifications.
 
 // ============================================================================
 // Patch Initialization Functions
@@ -1673,7 +1254,7 @@ function initNodeSnappingPatches() {
     const xWinner = pickNearestMoveCluster(moveXClusters, activeBounds.left);
 
     if (xWinner && Math.abs(activeBounds.left - xWinner.center) <= currentThresholdX) {
-      activeNode.pos[0] = Math.round(xWinner.center);
+      activeNode.pos[0] = xWinner.center;
       didSnap = true;
       xDidSnapMove = true;
     }
@@ -1684,7 +1265,7 @@ function initNodeSnappingPatches() {
     const yWinner = pickNearestMoveCluster(moveYClusters, activeBounds.top);
 
     if (yWinner && Math.abs(activeBounds.top - yWinner.center) <= currentThresholdY) {
-      activeNode.pos[1] = Math.round(yWinner.center);
+      activeNode.pos[1] = yWinner.center;
       didSnap = true;
       yDidSnapMove = true;
     }
@@ -1715,7 +1296,7 @@ function initNodeSnappingPatches() {
             // Align right edge of active to left edge of neighbor (with margin)
             targetX = nBounds.left - hSnapMargin - activeWidth;
             if (Math.abs(activeBounds.left - targetX) <= threshold) {
-              activeNode.pos[0] = Math.round(targetX);
+              activeNode.pos[0] = targetX;
               didSnap = true;
               xDidSnapMove = true;
               raycastXWinners.push(neighbor.node);
@@ -1724,7 +1305,7 @@ function initNodeSnappingPatches() {
             // Align left edge of active to right edge of neighbor (with margin)
             targetX = nBounds.right + hSnapMargin;
             if (Math.abs(activeBounds.left - targetX) <= threshold) {
-              activeNode.pos[0] = Math.round(targetX);
+              activeNode.pos[0] = targetX;
               didSnap = true;
               xDidSnapMove = true;
               raycastXWinners.push(neighbor.node);
@@ -1741,7 +1322,7 @@ function initNodeSnappingPatches() {
             // Align bottom edge of active to top edge of neighbor (with margin)
             targetY = nBounds.top - vSnapMargin - activeHeight;
             if (Math.abs(activeBounds.top - targetY) <= threshold) {
-              activeNode.pos[1] = Math.round(targetY);
+              activeNode.pos[1] = targetY;
               didSnap = true;
               yDidSnapMove = true;
               raycastYWinners.push(neighbor.node);
@@ -1750,7 +1331,7 @@ function initNodeSnappingPatches() {
             // Align top edge of active to bottom edge of neighbor (with margin)
             targetY = nBounds.bottom + vSnapMargin;
             if (Math.abs(activeBounds.top - targetY) <= threshold) {
-              activeNode.pos[1] = Math.round(targetY);
+              activeNode.pos[1] = targetY;
               didSnap = true;
               yDidSnapMove = true;
               raycastYWinners.push(neighbor.node);
@@ -1765,8 +1346,8 @@ function initNodeSnappingPatches() {
       const totalMoveY = activeNode.pos[1] - dragSnapshot.anchorY;
       for (const entry of dragSnapshot.nodes) {
         if (entry.node?.pos) {
-          entry.node.pos[0] = Math.round(entry.x + totalMoveX);
-          entry.node.pos[1] = Math.round(entry.y + totalMoveY);
+          entry.node.pos[0] = entry.x + totalMoveX;
+          entry.node.pos[1] = entry.y + totalMoveY;
         }
       }
     }
@@ -1991,100 +1572,9 @@ function initConnectionFocusPatches() {
   window.LGraphCanvas.prototype.__connectionFocusPatched = true;
 }
 
-function initSmartSizingPatches() {
-  const PATCH_VERSION = "2026-03-01-adapter";
+// initSmartSizingPatches removed from V1 adapter.
 
-  if (!window.LiteGraph || !window.LGraphNode?.prototype) return;
-
-  if (window.LGraphNode.prototype.__smartSizingPatched) {
-    if (window.LGraphNode.prototype.__smartSizingPatchVersion === PATCH_VERSION) return;
-    if (typeof window.LGraphNode.prototype.__smartSizingOriginalComputeSize === "function") {
-      window.LGraphNode.prototype.computeSize = window.LGraphNode.prototype.__smartSizingOriginalComputeSize;
-    }
-    if (typeof window.LGraphNode.prototype.__smartSizingOriginalSetSize === "function") {
-      window.LGraphNode.prototype.setSize = window.LGraphNode.prototype.__smartSizingOriginalSetSize;
-    }
-  }
-
-  V1State.originalComputeSize = window.LGraphNode.prototype.computeSize;
-  V1State.originalSetSize = window.LGraphNode.prototype.setSize;
-  V1State.originalConfigure = window.LGraphNode.prototype.configure;
-  V1State.originalGraphAdd = window.LGraph?.prototype?.add;
-  V1State.originalDrawNodeSS = window.LGraphCanvas?.prototype?.drawNode;
-
-  if (typeof V1State.originalComputeSize !== "function" || typeof V1State.originalSetSize !== "function") return;
-
-  window.LGraphNode.prototype.computeSize = function (out) {
-    const size = V1State.originalComputeSize.apply(this, arguments);
-    const maxInputWidth = getSlotMaxWidth(this.inputs);
-    const maxOutputWidth = getSlotMaxWidth(this.outputs);
-    const titleWidth = Math.min(MAX_TEXT_WIDTH, measureTextWidth(truncateToWidth(this.title || "", MAX_TEXT_WIDTH)));
-    const slotTextWidth = Math.min((MAX_TEXT_WIDTH * 2) + PORT_PADDING, maxInputWidth + maxOutputWidth + PORT_PADDING);
-    const textMinWidth = Math.max(slotTextWidth, titleWidth + PORT_PADDING, MIN_NODE_WIDTH);
-    const widgetBounds = computeWidgetBounds(this, textMinWidth);
-    let minWidth = Math.max(textMinWidth, widgetBounds.width);
-
-    const resizing = isNodeBeingResized(this);
-    if (!resizing && this.__smartUserSize?.length >= 2) {
-      minWidth = Math.max(minWidth, this.__smartUserSize[0]);
-    }
-
-    size[0] = Math.max(size[0], minWidth);
-    // Note: size[1] (height) is left as returned by originalComputeSize
-    return size;
-  };
-
-  window.LGraphNode.prototype.setSize = function (size) {
-    const result = V1State.originalSetSize.apply(this, arguments);
-    if (isNodeBeingResized(this) && this.size?.length >= 2) {
-      this.__smartUserSize = [this.size[0], this.size[1]];
-    }
-    return result;
-  };
-
-  if (typeof V1State.originalConfigure === "function") {
-    window.LGraphNode.prototype.configure = function (info) {
-      const result = V1State.originalConfigure.apply(this, arguments);
-      if (this.size?.length >= 2) this.__smartUserSize = [this.size[0], this.size[1]];
-      return result;
-    };
-  }
-
-  if (V1State.originalGraphAdd) {
-    window.LGraph.prototype.add = function (node, skipComputeOrder) {
-      const result = V1State.originalGraphAdd.apply(this, arguments);
-      if (node && node.constructor !== window.LGraphGroup && typeof node.computeSize === "function" && typeof node.setSize === "function") {
-        node.setSize(node.computeSize());
-      }
-      return result;
-    };
-  }
-
-  if (typeof V1State.originalDrawNodeSS === "function") {
-    window.LGraphCanvas.prototype.drawNode = function (node, ctx) {
-      const restorations = applyTruncatedLabelsTemporarily(node);
-      try {
-        return V1State.originalDrawNodeSS.apply(this, arguments);
-      } finally {
-        restoreTemporaryValues(restorations);
-      }
-    };
-  }
-
-  window.refreshSmartNodeSize = (node) => {
-    if (node?.computeSize && node.setSize) node.setSize(node.computeSize());
-  };
-
-  window.LGraphNode.prototype.__smartSizingPatched = true;
-  window.LGraphNode.prototype.__smartSizingPatchVersion = PATCH_VERSION;
-  window.LGraphNode.prototype.__smartSizingOriginalComputeSize = V1State.originalComputeSize;
-  window.LGraphNode.prototype.__smartSizingOriginalSetSize = V1State.originalSetSize;
-}
-
-function initNodeArrangement() {
-  if (window.__blockSpaceArrangementPoller) clearInterval(window.__blockSpaceArrangementPoller);
-  window.__blockSpaceArrangementPoller = setInterval(updatePanelVisibility, 200);
-}
+// initNodeArrangement removed.
 
 function isNodeBeingResized(node) {
   if (!node?.graph?.list_of_graphcanvas) return false;
@@ -2224,8 +1714,6 @@ export function initV1Adapter() {
   }
   if (window.__blockSpaceV1AdapterInitialized) return true;
 
-  initSmartSizingPatches();
-  initNodeArrangement();
   initConnectionFocusPatches();
   initNodeSnappingPatches();
   initUnifiedMouseUpHandler();
@@ -2258,22 +1746,11 @@ export function cleanupV1Adapter() {
   if (V1State.originalProcessMouseDown) window.LGraphCanvas.prototype.processMouseDown = V1State.originalProcessMouseDown;
   if (V1State.originalRenderLink) window.LGraphCanvas.prototype.renderLink = V1State.originalRenderLink;
   
-  // Restore drawNode in reverse order of patching: SS first, then CF
-  // This ensures we don't lose the chain of original references
-  if (V1State.originalDrawNodeSS) {
-    window.LGraphCanvas.prototype.drawNode = V1State.originalDrawNodeSS;
-  } else if (V1State.originalDrawNodeCF) {
+  // Restore drawNode of connection focus
+  if (V1State.originalDrawNodeCF) {
     window.LGraphCanvas.prototype.drawNode = V1State.originalDrawNodeCF;
   }
-  
-  if (V1State.originalComputeSize) window.LGraphNode.prototype.computeSize = V1State.originalComputeSize;
-  if (V1State.originalSetSize) window.LGraphNode.prototype.setSize = V1State.originalSetSize;
-  if (V1State.originalConfigure) window.LGraphNode.prototype.configure = V1State.originalConfigure;
 
-  if (window.__blockSpaceArrangementPoller) {
-    clearInterval(window.__blockSpaceArrangementPoller);
-    window.__blockSpaceArrangementPoller = null;
-  }
   stopAnimationLoop();
 
   // Unsubscribe from setting changes
@@ -2282,8 +1759,6 @@ export function cleanupV1Adapter() {
     V1State.settingsUnsubscribe = null;
   }
 
-  const panel = document.getElementById("block-space-arrangement-panel");
-  if (panel?.parentNode) panel.parentNode.removeChild(panel);
   clearDimensionAssociationLayer();
   destroyActiveMenu();
 

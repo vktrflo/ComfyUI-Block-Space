@@ -227,3 +227,6 @@ node.zip
 SNAP_RULES.md
 authentication.json
 auth.json
+
+# Local Dev Sync Script
+sync.sh

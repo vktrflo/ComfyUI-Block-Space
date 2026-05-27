@@ -41,15 +41,25 @@ function switchToV2Adapter() {
   
   console.log('[BlockSpace] V2 detected, switching adapter...');
   
-  // TODO: In future, we might need to cleanup V1 adapter first
-  // For now, just load V2 on top (V2 stub doesn't conflict)
-  import('./adapter-v2.js')
+  // 1. Clean up V1 first
+  import('./adapter-v1.js')
+    .then(({ cleanupV1Adapter }) => {
+      try {
+        cleanupV1Adapter();
+        console.log('[BlockSpace] V1 adapter cleaned up successfully');
+      } catch (err) {
+        console.error('[BlockSpace] Error during V1 adapter cleanup:', err);
+      }
+      
+      // 2. Load and initialize V2
+      return import('./adapter-v2.js');
+    })
     .then(({ initV2Adapter }) => {
       initV2Adapter();
       console.log('[BlockSpace] Switched to V2 adapter');
     })
     .catch(err => {
-      console.error('[BlockSpace] Failed to load V2 adapter:', err);
+      console.error('[BlockSpace] Failed to transition to V2 adapter:', err);
     });
 }
 
@@ -97,7 +107,30 @@ function forceLoadAdapter(version) {
   if (version === 'v2' && !v2Detected) {
     switchToV2Adapter();
   } else if (version === 'v1' && currentAdapter !== 'v1') {
-    console.log('[BlockSpace] Forcing V1 adapter reload not implemented');
+    console.log('[BlockSpace] Forcing V1 adapter reload...');
+    
+    // Clean up V2
+    import('./adapter-v2.js')
+      .then(({ cleanupV2Adapter }) => {
+        try {
+          cleanupV2Adapter();
+          console.log('[BlockSpace] V2 adapter cleaned up successfully');
+        } catch (err) {
+          console.error('[BlockSpace] Error during V2 adapter cleanup:', err);
+        }
+        
+        // Load and initialize V1
+        return import('./adapter-v1.js');
+      })
+      .then(({ initV1Adapter }) => {
+        initV1Adapter();
+        v2Detected = false;
+        currentAdapter = 'v1';
+        console.log('[BlockSpace] Forcing V1 adapter reload complete');
+      })
+      .catch(err => {
+        console.error('[BlockSpace] Failed to transition back to V1 adapter:', err);
+      });
   }
 }
 
