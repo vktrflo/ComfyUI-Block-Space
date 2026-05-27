@@ -566,8 +566,24 @@ export function initV2Adapter() {
     const snapEnabled = isSnappingEnabled();
     if (!focusEnabled && !snapEnabled) return;
     
-    const nodeEl = event.target.closest("[data-node-id]");
+    let nodeEl = event.target.closest("[data-node-id]");
     const canvas = getLGraphCanvas();
+    
+    // Fallback: If clicked on a selection outline or overlay that blocks data-node-id,
+    // but the click is physically inside the already selected node's bounds, use that!
+    if (!nodeEl && canvas) {
+      const activeNode = canvas.current_node || (canvas.selected_nodes && Object.values(canvas.selected_nodes)[0]);
+      if (activeNode) {
+        const bounds = getNodeBounds(activeNode);
+        if (bounds) {
+          const mouseGraph = clientToGraph(canvas, event.clientX, event.clientY);
+          if (mouseGraph.x >= bounds.left && mouseGraph.x <= bounds.right &&
+              mouseGraph.y >= bounds.top && mouseGraph.y <= bounds.bottom) {
+            nodeEl = document.querySelector(`[data-node-id="${activeNode.id}"]`);
+          }
+        }
+      }
+    }
     
     if (nodeEl && canvas) {
       const nodeIdAttr = nodeEl.getAttribute("data-node-id");
@@ -577,6 +593,14 @@ export function initV2Adapter() {
       }
       if (nodeId != null) {
         setFocusState(canvas, nodeId);
+        
+        // Track the initial drag offsets
+        const activeNode = canvas.graph?.getNodeById(nodeId);
+        if (activeNode && activeNode.pos) {
+          const mouseGraph = clientToGraph(canvas, event.clientX, event.clientY);
+          focusState.dragOffsetX = mouseGraph.x - activeNode.pos[0];
+          focusState.dragOffsetY = mouseGraph.y - activeNode.pos[1];
+        }
       }
     } else {
       // If clicked on canvas background, clear focus unless clicking UI menu
@@ -618,56 +642,72 @@ export function initV2Adapter() {
     if (event.shiftKey) return;
     
     if (focusState.isHolding && focusState.activeCanvas && focusState.activeNodeId != null) {
-      // Run as a microtask to execute immediately after Vue's synchronous event handlers update activeNode.pos
-      Promise.resolve().then(() => {
-        const canvas = focusState.activeCanvas;
-        const activeNode = canvas.graph?.getNodeById(focusState.activeNodeId);
+      const canvas = focusState.activeCanvas;
+      const activeNode = canvas.graph?.getNodeById(focusState.activeNodeId);
+      
+      if (activeNode && snapEnabled && focusState.dragOffsetX != null && focusState.dragOffsetY != null) {
+        const mouseGraph = clientToGraph(canvas, event.clientX, event.clientY);
+        const unsnappedX = mouseGraph.x - focusState.dragOffsetX;
+        const unsnappedY = mouseGraph.y - focusState.dragOffsetY;
         
-        if (activeNode && snapEnabled) {
-          const x = activeNode.pos[0];
-          const y = activeNode.pos[1];
-          
-          const snap = calculateV2Snap(activeNode, x, y);
-          
-          canvas.__blockSpaceResizeDebugStatus = {
-            active: true,
-            axis: "move",
+        const snap = calculateV2Snap(activeNode, unsnappedX, unsnappedY);
+        
+        // Update debug HUD status synchronously so outlines render immediately
+        canvas.__blockSpaceResizeDebugStatus = {
+          active: true,
+          axis: "move",
+          activeNode: activeNode,
+          xDidSnap: snap.xDidSnapMove,
+          yDidSnap: snap.yDidSnapMove,
+          xWinnerNodes: snap.xWinnerNodes,
+          yWinnerNodes: snap.yWinnerNodes,
+          activeCenterX: snap.centerX,
+          activeCenterY: snap.centerY,
+        };
+        
+        if (snap.didSnap) {
+          rememberRecentSnap(canvas, {
+            kind: "move",
+            nodeId: activeNode.id,
+            threshold: Math.max(snap.thresholdCanvasX, snap.thresholdCanvasY),
             xDidSnap: snap.xDidSnapMove,
             yDidSnap: snap.yDidSnapMove,
-            xWinnerNodes: snap.xWinnerNodes,
-            yWinnerNodes: snap.yWinnerNodes,
-            activeCenterX: snap.centerX,
-            activeCenterY: snap.centerY,
-          };
+            xTarget: snap.xDidSnapMove ? snap.snappedX : null,
+            yTarget: snap.yDidSnapMove ? snap.snappedY : null,
+          });
+          triggerSnapFeedback(canvas, activeNode, snap.xDidSnapMove, snap.yDidSnapMove);
           
-          if (snap.didSnap) {
-            rememberRecentSnap(canvas, {
-              kind: "move",
-              nodeId: activeNode.id,
-              threshold: Math.max(snap.thresholdCanvasX, snap.thresholdCanvasY),
-              xDidSnap: snap.xDidSnapMove,
-              yDidSnap: snap.yDidSnapMove,
-              xTarget: snap.xDidSnapMove ? snap.snappedX : null,
-              yTarget: snap.yDidSnapMove ? snap.snappedY : null,
-            });
-            triggerSnapFeedback(canvas, activeNode, snap.xDidSnapMove, snap.yDidSnapMove);
-            
-            // Apply snapped position reactively so Vue updates the DOM element
-            activeNode.pos = [snap.snappedX, snap.snappedY];
-          } else {
-            canvas.__blockSpaceRecentSnap = null;
+          // Modify PointerEvent clientX and clientY synchronously using defineProperty
+          const snappedMouseGraphX = snap.xDidSnapMove ? (snap.snappedX + focusState.dragOffsetX) : mouseGraph.x;
+          const snappedMouseGraphY = snap.yDidSnapMove ? (snap.snappedY + focusState.dragOffsetY) : mouseGraph.y;
+          const snappedClient = graphToClient(canvas, snappedMouseGraphX, snappedMouseGraphY);
+          
+          if (snappedClient) {
+            try {
+              Object.defineProperty(event, 'clientX', { value: snappedClient.x, configurable: true });
+              Object.defineProperty(event, 'clientY', { value: snappedClient.y, configurable: true });
+            } catch (err) {
+              // Ignore defineProperty errors on read-only event objects
+            }
           }
           
-          updateSnapFeedback(canvas);
-          renderResizeDebugHud(canvas);
+          // Apply snapped position reactively so Vue updates the DOM element
+          activeNode.pos = [snap.snappedX, snap.snappedY];
+        } else {
+          canvas.__blockSpaceRecentSnap = null;
         }
         
+        updateSnapFeedback(canvas);
+        renderResizeDebugHud(canvas);
         markCanvasDirty(canvas);
-      });
+      }
     }
   };
 
-  const handleBlur = () => {
+  const handleBlur = (event) => {
+    if (event && event.target !== window && event.target !== document) {
+      return;
+    }
     clearFocusState();
   };
 
@@ -991,7 +1031,7 @@ function applyResizeSnapping(canvas, resizingNode) {
   const bounds = getNodeBounds(resizingNode);
   if (!bounds) return false;
 
-  const thresholdCanvas = (SNAP_THRESHOLD / Math.max(0.0001, getCanvasScale(canvas))) * getResizeSnapStrength();
+  const thresholdCanvas = (SNAP_THRESHOLD / Math.max(0.0001, getCanvasScale(canvas))) * getResizeSnapStrength() * 1.5;
   const exitThresholdCanvas = thresholdCanvas * getExitThresholdMultiplier();
   const currentWidth = bounds.right - bounds.left;
   const currentHeight = bounds.bottom - bounds.top;
@@ -1055,7 +1095,7 @@ function applyResizeSnapping(canvas, resizingNode) {
   }
 
   let bestYHeight = null, bestYDelta = Infinity, bestYMode = null, bestYNodes = [];
-  const titleH = Number(window.LiteGraph?.NODE_TITLE_HEIGHT) || 24;
+  const titleH = 40;
 
   if (heightWinner) {
     bestYDelta = Math.abs(currentHeight - heightWinner.center);
@@ -1095,7 +1135,7 @@ function applyResizeSnapping(canvas, resizingNode) {
   const currentThresholdY = wasSnappedY ? exitThresholdCanvas : thresholdCanvas;
 
   if (bestYHeight !== null && bestYDelta <= currentThresholdY) {
-    const nextContentHeight = bestYHeight - titleH;
+    const nextContentHeight = bestYHeight;
     if (isFinite(nextContentHeight) && Math.abs(nextContentHeight - resizingNode.size[1]) > 0.01) {
       resizingNode.size[1] = nextContentHeight;
       didSnap = true;
@@ -1108,6 +1148,7 @@ function applyResizeSnapping(canvas, resizingNode) {
   canvas.__blockSpaceResizeDebugStatus = {
     active: true,
     axis: "resize",
+    activeNode: resizingNode,
     xDidSnap: xDidSnap,
     yDidSnap: yDidSnap,
     xWinnerNodes: bestXNodes,
@@ -1188,13 +1229,13 @@ function maybeCommitSnapOnMouseUp(canvas, nodeHint) {
     }
   } else if (snap.kind === "resize") {
     const minSize = getNodeMinSize(node);
-    const titleH = Number(window.LiteGraph?.NODE_TITLE_HEIGHT) || 24;
+    const titleH = 40;
     if (snap.xDidSnap && typeof snap.xTargetRight === "number" && Math.abs(bounds.right - snap.xTargetRight) <= tolerance) {
       node.size[0] = Math.max(minSize[0], snap.xTargetRight - bounds.left);
       appliedX = true;
     }
     if (snap.yDidSnap && typeof snap.yTargetBottom === "number" && Math.abs(bounds.bottom - snap.yTargetBottom) <= tolerance) {
-      node.size[1] = (snap.yTargetBottom - bounds.top) - titleH;
+      node.size[1] = snap.yTargetBottom - bounds.top;
       appliedY = true;
     }
   }
@@ -1218,6 +1259,10 @@ function clearDimensionAssociationLayer() {
 }
 
 function graphToClient(canvas, x, y) {
+  if (window.app?.positionConversion?.canvasPosToClientPos) {
+    const res = window.app.positionConversion.canvasPosToClientPos([x, y]);
+    return { x: res[0], y: res[1] };
+  }
   if (!canvas?.canvas) return null;
   const rect = canvas.canvas.getBoundingClientRect();
   const scale = getCanvasScale(canvas);
@@ -1225,6 +1270,21 @@ function graphToClient(canvas, x, y) {
   return {
     x: rect.left + (x + (Number(offset[0]) || 0)) * scale,
     y: rect.top + (y + (Number(offset[1]) || 0)) * scale,
+  };
+}
+
+function clientToGraph(canvas, clientX, clientY) {
+  if (window.app?.positionConversion?.clientPosToCanvasPos) {
+    const res = window.app.positionConversion.clientPosToCanvasPos([clientX, clientY]);
+    return { x: res[0], y: res[1] };
+  }
+  if (!canvas?.canvas) return { x: clientX, y: clientY };
+  const rect = canvas.canvas.getBoundingClientRect();
+  const scale = getCanvasScale(canvas);
+  const offset = canvas.ds?.offset || [0, 0];
+  return {
+    x: (clientX - rect.left) / scale - (Number(offset[0]) || 0),
+    y: (clientY - rect.top) / scale - (Number(offset[1]) || 0),
   };
 }
 
@@ -1258,7 +1318,7 @@ function renderDimensionAssociationHighlights(canvas, status) {
   for (const n of xNodes) trackNode(n, "width");
   for (const n of yNodes) trackNode(n, "height");
 
-  const titleH = Number(window.LiteGraph?.NODE_TITLE_HEIGHT) || 24;
+  const titleH = 40;
 
   for (const key in nodeMap) {
     if (!Object.prototype.hasOwnProperty.call(nodeMap, key)) continue;
@@ -1266,42 +1326,56 @@ function renderDimensionAssociationHighlights(canvas, status) {
     const bounds = getNodeBounds(item.node);
     if (!bounds) continue;
 
-    const topLeftFull = graphToClient(canvas, bounds.left, bounds.top);
-    if (!topLeftFull) continue;
-    const left = topLeftFull.x;
-    const width = Math.max(0, (bounds.right - bounds.left) * scale);
-    const fullHeight = Math.max(0, (bounds.bottom - bounds.top) * scale);
+    const el = document.querySelector(`[data-node-id="${item.node.id}"]`);
+    let left, right, width, height, top, bottom;
+    let useDOM = false;
 
-    const contentTopY = bounds.top - titleH;
-    const contentBottomY = bounds.bottom - titleH;
-    const contentTop = graphToClient(canvas, bounds.left, contentTopY).y;
-    const contentBottom = graphToClient(canvas, bounds.left, contentBottomY).y;
-    const contentHeight = contentBottom - contentTop;
+    if (el) {
+      const rect = el.getBoundingClientRect();
+      left = rect.left;
+      right = rect.right;
+      width = rect.width;
+      height = rect.height;
+      top = rect.top;
+      bottom = rect.bottom;
+      useDOM = true;
+    } else {
+      const topLeftFull = graphToClient(canvas, bounds.left, bounds.top);
+      if (!topLeftFull) continue;
+      left = topLeftFull.x;
+      width = Math.max(0, (bounds.right - bounds.left) * scale);
+      right = left + width;
+      
+      top = graphToClient(canvas, bounds.left, bounds.top).y;
+      bottom = graphToClient(canvas, bounds.left, bounds.bottom).y;
+      height = bottom - top;
+    }
 
     if (item.width) {
-      if (status.axis === "move") {
+      if (status && status.axis === "move") {
         const activeCenterX = status.activeCenterX ?? bounds.left;
         const targetCenterX = bounds.left + (bounds.right - bounds.left) / 2;
-        const anchorCanvasX = activeCenterX < targetCenterX ? bounds.left : bounds.right;
+        const useLeft = activeCenterX < targetCenterX;
         
-        let lineXClient = graphToClient(canvas, anchorCanvasX, bounds.top).x;
-        if (anchorCanvasX === bounds.right) lineXClient -= borderW;
-        appendLine(lineXClient, contentTop, borderW, contentHeight, guideColor);
+        let lineXClient = useLeft ? left : right;
+        if (!useLeft) lineXClient -= borderW;
+        appendLine(lineXClient, top, borderW, height, guideColor);
       } else {
-        appendLine(left, contentTop, borderW, contentHeight, guideColor);
-        appendLine(left + width - borderW, contentTop, borderW, contentHeight, guideColor);
+        appendLine(left, top, borderW, height, guideColor);
+        appendLine(right - borderW, top, borderW, height, guideColor);
       }
     }
     if (item.height) {
-      if (status.axis === "move") {
+      if (status && status.axis === "move") {
         const activeCenterY = status.activeCenterY ?? bounds.top;
         const targetCenterY = bounds.top + (bounds.bottom - bounds.top) / 2;
-        const anchorCanvasY = activeCenterY < targetCenterY ? contentTop : contentBottom;
+        const useTop = activeCenterY < targetCenterY;
         
+        const anchorCanvasY = useTop ? top : bottom;
         appendLine(left, anchorCanvasY, width, borderW, guideColor);
       } else {
-        appendLine(left, contentTop, width, borderW, guideColor);
-        appendLine(left, contentBottom, width, borderW, guideColor);
+        appendLine(left, top, width, borderW, guideColor);
+        appendLine(left, bottom, width, borderW, guideColor);
       }
     }
   }
@@ -1461,7 +1535,7 @@ function initNodeSnappingPatches() {
 
     const hSnapMargin = getHSnapMargin();
     const vSnapMargin = getVSnapMargin();
-    const baseMoveThreshold = getSnapThreshold() / Math.max(0.0001, getCanvasScale(this));
+    const baseMoveThreshold = (getSnapThreshold() * 1.5) / Math.max(0.0001, getCanvasScale(this));
     const exitThresholdCanvas = baseMoveThreshold * getExitThresholdMultiplier();
     const thresholdCanvasX = baseMoveThreshold * getMoveSnapStrength();
     const thresholdCanvasY = baseMoveThreshold * getMoveSnapStrength();
@@ -1615,6 +1689,7 @@ function initNodeSnappingPatches() {
     this.__blockSpaceResizeDebugStatus = {
       active: true,
       axis: "move",
+      activeNode: activeNode,
       xDidSnap: xDidSnapMove,
       yDidSnap: yDidSnapMove,
       xWinnerNodes: xWinnerNodes,
@@ -1677,9 +1752,7 @@ function calculateV2Snap(activeNode, x, y) {
   }
 
   const width = Math.max(0, Number(activeNode.size[0]) || 0);
-  const contentHeight = Math.max(0, Number(activeNode.size[1]) || 0);
-  const titleH = Number(window.LiteGraph && window.LiteGraph.NODE_TITLE_HEIGHT) || 24;
-  const totalHeight = contentHeight + titleH;
+  const totalHeight = Math.max(0, Number(activeNode.size[1]) || 0);
 
   const tempBounds = {
     left: x,
@@ -1692,7 +1765,7 @@ function calculateV2Snap(activeNode, x, y) {
 
   const hSnapMargin = getHSnapMargin();
   const vSnapMargin = getVSnapMargin();
-  const baseMoveThreshold = getSnapThreshold() / Math.max(0.0001, getCanvasScale(canvas));
+  const baseMoveThreshold = (getSnapThreshold() * 1.5) / Math.max(0.0001, getCanvasScale(canvas));
   const exitThresholdCanvas = baseMoveThreshold * getExitThresholdMultiplier();
   const thresholdCanvasX = baseMoveThreshold * getMoveSnapStrength();
   const thresholdCanvasY = baseMoveThreshold * getMoveSnapStrength();

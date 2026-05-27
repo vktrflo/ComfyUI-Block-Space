@@ -194,6 +194,41 @@ function injectSettingsIcon() {
       tr:has([id^="BlockSpace."]) .comfy-help-icon {
         cursor: help !important;
       }
+      .block-space-tooltip {
+        position: fixed;
+        z-index: 10000;
+        background-color: #2e3033;
+        color: #ffffff;
+        padding: 6px 10px;
+        border-radius: 6px;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        font-size: 12px;
+        font-weight: 500;
+        line-height: 1.35;
+        text-align: center;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+        pointer-events: none;
+        opacity: 0;
+        transform: translate(-50%, -6px);
+        transition: opacity 0.15s ease, transform 0.15s ease;
+        white-space: pre-line;
+      }
+      .block-space-tooltip.visible {
+        opacity: 1;
+        transform: translate(-50%, 0);
+      }
+      .block-space-tooltip::after {
+        content: "";
+        position: absolute;
+        bottom: -4px;
+        left: 50%;
+        transform: translateX(-50%);
+        border-width: 4px 4px 0;
+        border-style: solid;
+        border-color: #2e3033 transparent;
+        display: block;
+        width: 0;
+      }
     `;
     document.head.appendChild(style);
   }
@@ -276,16 +311,20 @@ function arrangeSelection(canvas) {
   const hMargin = math ? math.getHSnapMargin() : 60;
   const vMargin = math ? math.getVSnapMargin() : 40;
   const titleH = Number(window.LiteGraph?.NODE_TITLE_HEIGHT) || 24;
+  const isV2 = window.BlockSpaceAdapterMode === "v2" ||
+               (typeof window.BlockSpaceDetect === "function" && window.BlockSpaceDetect() === "v2") ||
+               (typeof document !== "undefined" && document.querySelector("[data-node-id]") !== null);
 
   const getNodeBounds = math ? math.getNodeBounds : (node) => {
     if (!node || !node.pos || !node.size) return null;
+    const h = isV2 ? 0 : titleH;
     return {
       left: node.pos[0],
       right: node.pos[0] + node.size[0],
       top: node.pos[1],
-      bottom: node.pos[1] + node.size[1] + titleH,
+      bottom: node.pos[1] + node.size[1] + h,
       centerX: node.pos[0] + node.size[0] * 0.5,
-      centerY: node.pos[1] + (node.size[1] + titleH) * 0.5
+      centerY: node.pos[1] + (node.size[1] + h) * 0.5
     };
   };
 
@@ -377,7 +416,7 @@ function arrangeSelection(canvas) {
       sec.node.pos = [startX, currentY];
       sec.node.size = [globalMaxWidth, sec.node.size[1]];
       
-      currentY += sec.node.size[1] + titleH + vMargin;
+      currentY += sec.node.size[1] + (isV2 ? 0 : titleH) + vMargin;
     } else {
       const cols = sec.columns;
       const numCols = cols.length;
@@ -393,7 +432,7 @@ function arrangeSelection(canvas) {
         let colNaturalHeight = (col.length - 1) * vMargin;
         col.forEach(n => {
            const b = getNodeBounds(n);
-           colNaturalHeight += b ? (b.bottom - b.top) : (n.size[1] + titleH);
+           colNaturalHeight += b ? (b.bottom - b.top) : (n.size[1] + (isV2 ? 0 : titleH));
         });
         if (colNaturalHeight > maxColHeight) maxColHeight = colNaturalHeight;
       });
@@ -412,7 +451,7 @@ function arrangeSelection(canvas) {
         // --- NODE HEIGHT PROPORTIONS ---
         const nodeNaturalHeights = col.map(n => {
           const b = getNodeBounds(n);
-          return b ? (b.bottom - b.top) : (n.size[1] + titleH);
+          return b ? (b.bottom - b.top) : (n.size[1] + (isV2 ? 0 : titleH));
         });
         const totalNaturalHeight = nodeNaturalHeights.reduce((sum, h) => sum + h, 0);
         const targetAvailableHeight = maxColHeight - (numNodes - 1) * vMargin;
@@ -427,7 +466,7 @@ function arrangeSelection(canvas) {
               : (nodeNaturalHeights[j] / totalNaturalHeight) * targetAvailableHeight;
 
           node.pos = [currentX, colY];
-          node.size = [targetColWidth, Math.max(10, targetNodeHeight - titleH)];
+          node.size = [targetColWidth, Math.max(10, targetNodeHeight - (isV2 ? 0 : titleH))];
 
           colY += targetNodeHeight + vMargin;
         }
@@ -452,6 +491,8 @@ app.registerExtension({
       id: "block-space.harmonize",
       label: "Harmonize Block",
       icon: "block-space-menu-icon",
+      tooltip: "Align and clean up selected node layout proportions into a grid.",
+      description: "Align and clean up selected node layout proportions into a grid.",
       function: () => {
         if (app.canvas) arrangeSelection(app.canvas);
       }
@@ -492,13 +533,73 @@ app.registerExtension({
 
     registerBlockSpaceSettings();
     injectSettingsIcon();
+
+    // Custom pixel-identical ComfyUI tooltip helper for the selection toolbox button
+    let activeTooltip = null;
+
+    const showTooltip = (button, text) => {
+      if (activeTooltip) return;
+      
+      const tooltip = document.createElement("div");
+      tooltip.className = "block-space-tooltip";
+      tooltip.innerText = text; // Preserves newlines
+      document.body.appendChild(tooltip);
+      
+      const rect = button.getBoundingClientRect();
+      const tooltipRect = tooltip.getBoundingClientRect();
+      
+      const x = rect.left + rect.width / 2;
+      const y = rect.top - tooltipRect.height - 8;
+      
+      tooltip.style.left = `${x}px`;
+      tooltip.style.top = `${y}px`;
+      
+      // Force reflow
+      tooltip.offsetHeight;
+      tooltip.classList.add("visible");
+      activeTooltip = tooltip;
+    };
+
+    const hideTooltip = () => {
+      if (activeTooltip) {
+        const tooltip = activeTooltip;
+        activeTooltip = null;
+        tooltip.classList.remove("visible");
+        setTimeout(() => {
+          tooltip.remove();
+        }, 150);
+      }
+    };
+
+    document.addEventListener("pointerover", (event) => {
+      if (!event.target) return;
+      const icon = typeof event.target.closest === "function" && event.target.closest(".block-space-menu-icon");
+      if (icon) {
+        const button = (typeof icon.closest === "function" && icon.closest("button")) || icon;
+        if (button) {
+          showTooltip(button, "Harmonize Selected Blocks\nAlign and clean up selected node layout proportions into a grid.");
+        }
+      }
+    }, true);
+
+    document.addEventListener("pointerout", (event) => {
+      if (!event.target) return;
+      const icon = typeof event.target.closest === "function" && event.target.closest(".block-space-menu-icon");
+      if (icon) {
+        hideTooltip();
+      }
+    }, true);
+
+    document.addEventListener("pointerdown", () => {
+      hideTooltip();
+    }, true);
   },
   getNodeMenuItems(node) {
     const selected = app.canvas?.selected_nodes;
     if (selected && Object.keys(selected).length > 1 && selected[node.id]) {
       return [
         {
-          content: `<span style="display:inline-flex;align-items:center;font-weight:bold;">
+          content: `<span title="Align and clean up selected node layout proportions into a grid." style="display:inline-flex;align-items:center;font-weight:bold;">
             <svg class="block-space-nav-icon" viewBox="0 0 24 24" fill="none" style="width:16px;height:16px;margin-right:8px;vertical-align:middle;display:inline-block;">
               <path d="M4 4H10V10H4V4Z" fill="#57b1ff" rx="1"/>
               <path d="M14 14H20V20H14V14Z" fill="#8dff57" rx="1"/>
@@ -519,7 +620,7 @@ app.registerExtension({
     if (selected && Object.keys(selected).length > 1) {
       return [
         {
-          content: `<span style="display:inline-flex;align-items:center;font-weight:bold;">
+          content: `<span title="Align and clean up selected node layout proportions into a grid." style="display:inline-flex;align-items:center;font-weight:bold;">
             <svg class="block-space-nav-icon" viewBox="0 0 24 24" fill="none" style="width:16px;height:16px;margin-right:8px;vertical-align:middle;display:inline-block;">
               <path d="M4 4H10V10H4V4Z" fill="#57b1ff" rx="1"/>
               <path d="M14 14H20V20H14V14Z" fill="#8dff57" rx="1"/>

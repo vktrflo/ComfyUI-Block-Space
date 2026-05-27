@@ -264,11 +264,12 @@ export function getNodeBounds(node) {
   const width = Math.max(0, Number(node.size[0]) || 0);
   const contentHeight = Math.max(0, Number(node.size[1]) || 0);
 
-  // LiteGraph.NODE_TITLE_HEIGHT is usually 24px
-  // node.pos[1] is the top of the title bar
-  // node.size[1] is the height of the content area only
-  const titleH = Number(window.LiteGraph && window.LiteGraph.NODE_TITLE_HEIGHT) || 24;
-  const totalHeight = contentHeight + titleH;
+  // In V1, LiteGraph node.size[1] represents content height only, so title height must be added.
+  // In V2, the Vue-rendered DOM elements store total height in node.size[1].
+  const isV2 = window.BlockSpaceAdapterMode === "v2" ||
+               (typeof window.BlockSpaceDetect === "function" && window.BlockSpaceDetect() === "v2") ||
+               (typeof document !== "undefined" && document.querySelector("[data-node-id], .lg-node") !== null);
+  const totalHeight = isV2 ? contentHeight : (contentHeight + (Number(window.LiteGraph && window.LiteGraph.NODE_TITLE_HEIGHT) || 24));
 
   return {
     left: left,
