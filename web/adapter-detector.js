@@ -3,7 +3,7 @@
  * Defaults to V1 immediately, switches to V2 if detected
  */
 
-const BLOCKSPACE_VERSION = "1.1.1";
+const BLOCKSPACE_VERSION = "1.1.2";
 const cacheBuster = `?v=${BLOCKSPACE_VERSION}`;
 
 // Detection state
@@ -17,7 +17,7 @@ let v2Detected = false;
 function checkV2DOMNodes() {
   if (typeof window === 'undefined') return false;
   return document.querySelector('[data-node-id]') !== null || 
-         !!(window.app?.positionConversion || window.comfyAPI || window.__COMFYUI_FRONTEND_VERSION__);
+         !!(window.app?.positionConversion);
 }
 
 /**
