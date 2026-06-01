@@ -3,25 +3,28 @@
  * Defaults to V1 immediately, switches to V2 if detected
  */
 
-const BLOCKSPACE_VERSION = "1.0.5";
+const BLOCKSPACE_VERSION = "1.0.6";
+const cacheBuster = `?v=${BLOCKSPACE_VERSION}`;
 
 // Detection state
 let currentAdapter = 'v1';
 let v2Detected = false;
 
 /**
- * Check for V2 DOM nodes (data-node-id attribute)
- * This is the definitive V2 marker
+ * Check for V2 DOM nodes (data-node-id attribute) or V2 global structures.
+ * This is 100% robust and works even on empty graphs.
  */
 function checkV2DOMNodes() {
-  return document.querySelector('[data-node-id]') !== null;
+  if (typeof window === 'undefined') return false;
+  return document.querySelector('[data-node-id]') !== null || 
+         !!(window.app?.positionConversion || window.comfyAPI || window.__COMFYUI_FRONTEND_VERSION__);
 }
 
 /**
  * Load V1 adapter immediately (default)
  */
 function loadV1Adapter() {
-  import('./adapter-v1.js')
+  import(`./adapter-v1.js${cacheBuster}`)
     .then(({ initV1Adapter }) => {
       initV1Adapter();
       console.log('[BlockSpace] V1 adapter loaded (default)');
@@ -42,7 +45,7 @@ function switchToV2Adapter() {
   console.log('[BlockSpace] V2 detected, switching adapter...');
   
   // 1. Clean up V1 first
-  import('./adapter-v1.js')
+  import(`./adapter-v1.js${cacheBuster}`)
     .then(({ cleanupV1Adapter }) => {
       try {
         cleanupV1Adapter();
@@ -52,7 +55,7 @@ function switchToV2Adapter() {
       }
       
       // 2. Load and initialize V2
-      return import('./adapter-v2.js');
+      return import(`./adapter-v2.js${cacheBuster}`);
     })
     .then(({ initV2Adapter }) => {
       initV2Adapter();
@@ -110,7 +113,7 @@ function forceLoadAdapter(version) {
     console.log('[BlockSpace] Forcing V1 adapter reload...');
     
     // Clean up V2
-    import('./adapter-v2.js')
+    import(`./adapter-v2.js${cacheBuster}`)
       .then(({ cleanupV2Adapter }) => {
         try {
           cleanupV2Adapter();
@@ -120,7 +123,7 @@ function forceLoadAdapter(version) {
         }
         
         // Load and initialize V1
-        return import('./adapter-v1.js');
+        return import(`./adapter-v1.js${cacheBuster}`);
       })
       .then(({ initV1Adapter }) => {
         initV1Adapter();
