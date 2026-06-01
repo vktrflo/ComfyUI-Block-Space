@@ -600,15 +600,7 @@ export function initV2Adapter() {
                               target.closest(".lg-widget") ||
                               target.closest(".custom-widget");
 
-      const style = window.getComputedStyle(target);
-      const isInteractiveCursor = style.cursor === "pointer" || 
-                                  style.cursor === "ew-resize" || 
-                                  style.cursor === "ns-resize" || 
-                                  style.cursor === "move" || 
-                                  style.cursor === "grab" || 
-                                  style.cursor === "grabbing";
-
-      if (isInput || isWidgetElement || isInteractiveCursor) {
+      if (isInput || isWidgetElement) {
         event.stopPropagation();
         return;
       }
