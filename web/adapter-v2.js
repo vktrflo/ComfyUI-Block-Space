@@ -583,9 +583,22 @@ export function initV2Adapter() {
   // Pointer event handlers with capture-phase document listeners
   // This safely captures pointer clicks before Vue components stopPropagation
   const handlePointerdown = (event) => {
-    // Prevent dragging when interacting with custom draggable or interactive embedded widgets in Nodes 2.0
     const target = event.target;
     if (target) {
+      // 1. Exclude ports/sockets so we don't snap/move nodes while dragging connections in Nodes 2.0
+      const isPort = target.closest(".lg-port") || 
+                     target.closest(".comfy-port") || 
+                     target.closest(".port") || 
+                     target.closest(".socket") || 
+                     target.closest("[data-port-name]") || 
+                     target.closest("[data-port-type]") || 
+                     target.closest("[data-slot]") || 
+                     target.closest(".slot") || 
+                     target.closest(".lg-node-port") || 
+                     target.closest(".lg-node-slot") || 
+                     target.closest(".port-circle");
+
+      // 2. Exclude interactive form inputs and custom widgets
       const isInput = target.tagName === "INPUT" || 
                       target.tagName === "TEXTAREA" || 
                       target.tagName === "SELECT" || 
@@ -600,9 +613,11 @@ export function initV2Adapter() {
                               target.closest(".lg-widget") ||
                               target.closest(".custom-widget");
 
-      if (isInput || isWidgetElement) {
-        event.stopPropagation();
-        return;
+      if (isPort || isInput || isWidgetElement) {
+        if (isInput || isWidgetElement) {
+          event.stopPropagation();
+        }
+        return; // Exit early: do not initiate node snapping/dragging
       }
     }
 
