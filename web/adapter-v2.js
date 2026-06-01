@@ -583,6 +583,37 @@ export function initV2Adapter() {
   // Pointer event handlers with capture-phase document listeners
   // This safely captures pointer clicks before Vue components stopPropagation
   const handlePointerdown = (event) => {
+    // Prevent dragging when interacting with custom draggable or interactive embedded widgets in Nodes 2.0
+    const target = event.target;
+    if (target) {
+      const isInput = target.tagName === "INPUT" || 
+                      target.tagName === "TEXTAREA" || 
+                      target.tagName === "SELECT" || 
+                      target.tagName === "BUTTON" || 
+                      target.tagName === "CANVAS";
+
+      const isWidgetElement = target.closest(".comfy-node-widgets") || 
+                              target.closest(".node-widgets") || 
+                              target.closest("[data-widget-name]") ||
+                              target.classList.contains("comfy-widget") ||
+                              target.closest(".comfy-widget") ||
+                              target.closest(".lg-widget") ||
+                              target.closest(".custom-widget");
+
+      const style = window.getComputedStyle(target);
+      const isInteractiveCursor = style.cursor === "pointer" || 
+                                  style.cursor === "ew-resize" || 
+                                  style.cursor === "ns-resize" || 
+                                  style.cursor === "move" || 
+                                  style.cursor === "grab" || 
+                                  style.cursor === "grabbing";
+
+      if (isInput || isWidgetElement || isInteractiveCursor) {
+        event.stopPropagation();
+        return;
+      }
+    }
+
     const focusEnabled = getFocusSettings().enabled;
     const snapEnabled = isSnappingEnabled();
     if (!focusEnabled && !snapEnabled) return;
@@ -888,9 +919,8 @@ function getActiveDraggedNode(canvas, event) {
   if (!canvas) return null;
   if (canvas.dragging_canvas || canvas.resizing_node || canvas.selected_group_resizing) return null;
   if (canvas.node_dragged && canvas.node_dragged.pos && canvas.node_dragged.size) return canvas.node_dragged;
-  if (isLeftMouseDown(event) && canvas.last_mouse_dragging && canvas.current_node && canvas.current_node.pos && canvas.current_node.size && !canvas.connecting_node) {
-    return canvas.current_node;
-  }
+  // Fallback is disabled in V2 to prevent the connection-dragging node-jumping bug.
+  // V2 node dragging snapping is handled natively by handlePointermove.
   return null;
 }
 
