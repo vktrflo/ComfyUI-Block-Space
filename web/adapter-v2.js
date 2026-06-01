@@ -583,6 +583,62 @@ export function initV2Adapter() {
   // Pointer event handlers with capture-phase document listeners
   // This safely captures pointer clicks before Vue components stopPropagation
   const handlePointerdown = (event) => {
+    const target = event.target;
+    if (target) {
+      // 1. Exclude ports/sockets so we don't snap/move nodes while dragging connections in Nodes 2.0
+      const isPort = target.closest(".lg-port") || 
+                     target.closest(".comfy-port") || 
+                     target.closest(".port") || 
+                     target.closest(".socket") || 
+                     target.closest("[data-port-name]") || 
+                     target.closest("[data-port-type]") || 
+                     target.closest("[data-slot]") || 
+                     target.closest(".slot") || 
+                     target.closest(".lg-node-port") || 
+                     target.closest(".lg-node-slot") || 
+                     target.closest(".port-circle") ||
+                     target.closest(".lg-port-input") ||
+                     target.closest(".lg-port-output") ||
+                     target.closest(".lg-node-input") ||
+                     target.closest(".lg-node-output") ||
+                     target.closest(".input-port") ||
+                     target.closest(".output-port") ||
+                     target.closest(".comfy-node-input") ||
+                     target.closest(".comfy-node-output") ||
+                     target.closest(".lg-socket") ||
+                     target.closest(".socket-input") ||
+                     target.closest(".socket-output");
+
+      // 2. Exclude interactive form inputs and custom widgets (but NOT the main graph canvas!)
+      const mainCanvasEl = getLGraphCanvas()?.canvas;
+      const isInput = target.tagName === "INPUT" || 
+                      target.tagName === "TEXTAREA" || 
+                      target.tagName === "SELECT" || 
+                      target.tagName === "BUTTON" || 
+                      (target.tagName === "CANVAS" && target !== mainCanvasEl);
+
+      const isWidgetElement = target.closest(".comfy-node-widgets") || 
+                              target.closest(".node-widgets") || 
+                              target.closest("[data-widget-name]") ||
+                              target.classList.contains("comfy-widget") ||
+                              target.closest(".comfy-widget") ||
+                              target.closest(".lg-widget") ||
+                              target.closest(".custom-widget") ||
+                              target.closest(".comfy-node-widget") ||
+                              target.closest(".node-widget") ||
+                              target.closest(".comfy-input") ||
+                              target.closest(".lg-node-widget") ||
+                              target.closest(".widget") ||
+                              target.closest("[data-widget-type]");
+
+      if (isPort || isInput || isWidgetElement) {
+        if (isInput || isWidgetElement) {
+          event.stopPropagation();
+        }
+        return; // Exit early: do not initiate node snapping/dragging
+      }
+    }
+
     const focusEnabled = getFocusSettings().enabled;
     const snapEnabled = isSnappingEnabled();
     if (!focusEnabled && !snapEnabled) return;
@@ -661,6 +717,23 @@ export function initV2Adapter() {
     const snapEnabled = isSnappingEnabled();
     if (!focusEnabled && !snapEnabled) return;
     if (event.shiftKey) return;
+
+    // Safety check 1: If left mouse button is not pressed, we cannot be dragging/holding a node
+    if (!isLeftMouseDown(event)) {
+      if (focusState.isHolding) {
+        clearFocusState();
+      }
+      return;
+    }
+
+    // Safety check 2: If a connection/wire drag is active, do not snap or drag nodes
+    const canvas = focusState.activeCanvas || getLGraphCanvas();
+    if (canvas?.connecting_node || canvas?.connecting_link) {
+      if (focusState.isHolding) {
+        clearFocusState();
+      }
+      return;
+    }
     
     if (focusState.isHolding && focusState.activeCanvas && focusState.activeNodeId != null) {
       const canvas = focusState.activeCanvas;
@@ -888,9 +961,8 @@ function getActiveDraggedNode(canvas, event) {
   if (!canvas) return null;
   if (canvas.dragging_canvas || canvas.resizing_node || canvas.selected_group_resizing) return null;
   if (canvas.node_dragged && canvas.node_dragged.pos && canvas.node_dragged.size) return canvas.node_dragged;
-  if (isLeftMouseDown(event) && canvas.last_mouse_dragging && canvas.current_node && canvas.current_node.pos && canvas.current_node.size && !canvas.connecting_node) {
-    return canvas.current_node;
-  }
+  // Fallback is disabled in V2 to prevent the connection-dragging node-jumping bug.
+  // V2 node dragging snapping is handled natively by handlePointermove.
   return null;
 }
 
