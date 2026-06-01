@@ -596,14 +596,26 @@ export function initV2Adapter() {
                      target.closest(".slot") || 
                      target.closest(".lg-node-port") || 
                      target.closest(".lg-node-slot") || 
-                     target.closest(".port-circle");
+                     target.closest(".port-circle") ||
+                     target.closest(".lg-port-input") ||
+                     target.closest(".lg-port-output") ||
+                     target.closest(".lg-node-input") ||
+                     target.closest(".lg-node-output") ||
+                     target.closest(".input-port") ||
+                     target.closest(".output-port") ||
+                     target.closest(".comfy-node-input") ||
+                     target.closest(".comfy-node-output") ||
+                     target.closest(".lg-socket") ||
+                     target.closest(".socket-input") ||
+                     target.closest(".socket-output");
 
-      // 2. Exclude interactive form inputs and custom widgets
+      // 2. Exclude interactive form inputs and custom widgets (but NOT the main graph canvas!)
+      const mainCanvasEl = getLGraphCanvas()?.canvas;
       const isInput = target.tagName === "INPUT" || 
                       target.tagName === "TEXTAREA" || 
                       target.tagName === "SELECT" || 
                       target.tagName === "BUTTON" || 
-                      target.tagName === "CANVAS";
+                      (target.tagName === "CANVAS" && target !== mainCanvasEl);
 
       const isWidgetElement = target.closest(".comfy-node-widgets") || 
                               target.closest(".node-widgets") || 
@@ -611,7 +623,13 @@ export function initV2Adapter() {
                               target.classList.contains("comfy-widget") ||
                               target.closest(".comfy-widget") ||
                               target.closest(".lg-widget") ||
-                              target.closest(".custom-widget");
+                              target.closest(".custom-widget") ||
+                              target.closest(".comfy-node-widget") ||
+                              target.closest(".node-widget") ||
+                              target.closest(".comfy-input") ||
+                              target.closest(".lg-node-widget") ||
+                              target.closest(".widget") ||
+                              target.closest("[data-widget-type]");
 
       if (isPort || isInput || isWidgetElement) {
         if (isInput || isWidgetElement) {
