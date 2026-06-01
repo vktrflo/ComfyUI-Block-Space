@@ -3,7 +3,7 @@
  * Defaults to V1 immediately, switches to V2 if detected
  */
 
-const BLOCKSPACE_VERSION = "1.1.0";
+const BLOCKSPACE_VERSION = "1.1.1";
 const cacheBuster = `?v=${BLOCKSPACE_VERSION}`;
 
 // Detection state

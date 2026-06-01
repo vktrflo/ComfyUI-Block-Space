@@ -717,6 +717,23 @@ export function initV2Adapter() {
     const snapEnabled = isSnappingEnabled();
     if (!focusEnabled && !snapEnabled) return;
     if (event.shiftKey) return;
+
+    // Safety check 1: If left mouse button is not pressed, we cannot be dragging/holding a node
+    if (!isLeftMouseDown(event)) {
+      if (focusState.isHolding) {
+        clearFocusState();
+      }
+      return;
+    }
+
+    // Safety check 2: If a connection/wire drag is active, do not snap or drag nodes
+    const canvas = focusState.activeCanvas || getLGraphCanvas();
+    if (canvas?.connecting_node || canvas?.connecting_link) {
+      if (focusState.isHolding) {
+        clearFocusState();
+      }
+      return;
+    }
     
     if (focusState.isHolding && focusState.activeCanvas && focusState.activeNodeId != null) {
       const canvas = focusState.activeCanvas;
