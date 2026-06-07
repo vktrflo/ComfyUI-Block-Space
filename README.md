@@ -119,6 +119,16 @@ The extension automatically detects the ComfyUI version at runtime and handles t
 
 ## 📋 Changelog
 
+### v1.0.6
+
+**Auto-Organize Graph Layout**
+- Implemented a complete topological flow-based auto-layout engine for the canvas.
+- Dynamically resolves wireless node dependencies (`GetNode`/`SetNode` pairs) so they align correctly.
+- Aligns all columns of connected nodes to a clean global top baseline (`Y = 100`).
+- Isolates completely disconnected utility nodes (like notes and downloaders) and stacks them neatly at the top of the graph.
+- Configured keyboard shortcuts **Ctrl + Alt + L** and **Ctrl + Alt + Shift + Space** to instantly trigger the organization routine.
+- Resolved Vue 3 proxy reactivity issues to guarantee immediate visual updates of DOM elements in modern ComfyUI Nodes 2.0 (V2).
+
 ### v2.0.0 (Nodes 2.0 Major Update)
 
 **Nodes 2.0 (V2) Production Integration**

@@ -1,7 +1,7 @@
 [project]
 name = "ComfyUI-Block-Space"
 description = "A Figma-style layout and snapping engine for the ComfyUI canvas."
-version = "1.0.5"
+version = "1.0.6"
 license = {file = "MIT"} 
 classifiers = [
     # For OS-independent nodes (works on all operating systems)
