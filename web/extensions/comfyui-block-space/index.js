@@ -298,6 +298,329 @@ function loadBlockSpaceAdapter(baseUrl) {
   document.head.appendChild(script);
 }
 
+function layoutDisconnectedGrid(nodes, titleH) {
+  let currX = 100;
+  let currY = 100;
+  let maxHeight = 0;
+  for (let i = 0; i < nodes.length; i++) {
+    const node = nodes[i];
+    const w = node.size ? node.size[0] : 200;
+    const h = (node.size ? node.size[1] : 100) + titleH;
+    node.pos = [currX, currY];
+    if (h > maxHeight) maxHeight = h;
+    currX += w + 80;
+    if ((i + 1) % 6 === 0) {
+      currX = 100;
+      currY += maxHeight + 80;
+      maxHeight = 0;
+    }
+  }
+}
+
+function autoOrganizeGraph(canvas) {
+  const graph = canvas.graph;
+  if (!graph) return;
+
+  graph.beforeChange?.();
+
+  const nodes = graph._nodes;
+  if (!nodes || nodes.length === 0) return;
+
+  const nodeMap = {};
+  for (const node of nodes) {
+    if (node && node.id != null) {
+      nodeMap[node.id] = node;
+    }
+  }
+
+  const isV2 = window.BlockSpaceAdapterMode === "v2" ||
+               (typeof window.BlockSpaceDetect === "function" && window.BlockSpaceDetect() === "v2") ||
+               (typeof document !== "undefined" && document.querySelector("[data-node-id]") !== null);
+  const titleH = isV2 ? 40 : (Number(window.LiteGraph?.NODE_TITLE_HEIGHT) || 24);
+
+  const getNodeHeight = (node) => {
+    if (node.flags?.collapsed) return titleH;
+    return (node.size ? node.size[1] : 100) + titleH;
+  };
+
+  const getNodeWidth = (node) => {
+    return node.size ? node.size[0] : 200;
+  };
+
+  const adjOut = {};
+  const adjIn = {};
+  for (const node of nodes) {
+    adjOut[node.id] = [];
+    adjIn[node.id] = [];
+  }
+
+  const links = graph.links ? (Array.isArray(graph.links) ? graph.links : Object.values(graph.links)) : [];
+  for (const link of links) {
+    if (!link) continue;
+    const originId = link.origin_id;
+    const targetId = link.target_id;
+    if (nodeMap[originId] && nodeMap[targetId]) {
+      adjOut[originId].push(targetId);
+      adjIn[targetId].push(originId);
+    }
+  }
+
+  const setNodes = {};
+  for (const node of nodes) {
+    if (node.type === "SetNode") {
+      const val = node.widgets_values?.[0];
+      if (val) {
+        setNodes[val] = node.id;
+      }
+    }
+  }
+  for (const node of nodes) {
+    if (node.type === "GetNode") {
+      const val = node.widgets_values?.[0];
+      if (val && setNodes[val] != null) {
+        const parentId = setNodes[val];
+        const childId = node.id;
+        adjOut[parentId].push(childId);
+        adjIn[childId].push(parentId);
+      }
+    }
+  }
+
+  const disconnectedNodeIds = [];
+  const connectedNodeIds = [];
+  for (const node of nodes) {
+    const nid = node.id;
+    if (adjIn[nid].length === 0 && adjOut[nid].length === 0) {
+      disconnectedNodeIds.push(nid);
+    } else {
+      connectedNodeIds.push(nid);
+    }
+  }
+
+  const visited = {};
+  const layerMap = {};
+
+  const assignLayersDFS = (nodeId, currentLayer) => {
+    if (visited[nodeId] != null) {
+      if (visited[nodeId] === 1) return;
+      layerMap[nodeId] = Math.max(layerMap[nodeId] || 0, currentLayer);
+      return;
+    }
+
+    visited[nodeId] = 1;
+    layerMap[nodeId] = currentLayer;
+
+    const children = adjOut[nodeId] || [];
+    for (const childId of children) {
+      assignLayersDFS(childId, currentLayer + 1);
+    }
+
+    visited[nodeId] = 2;
+  };
+
+  const sources = connectedNodeIds.filter(nid => adjIn[nid].length === 0);
+  const initialSources = sources.length > 0 ? sources : connectedNodeIds;
+
+  for (const sourceId of initialSources) {
+    assignLayersDFS(sourceId, 0);
+  }
+
+  for (const nid of connectedNodeIds) {
+    if (layerMap[nid] == null) {
+      assignLayersDFS(nid, 0);
+    }
+  }
+
+  const sortedConnectedIds = [...connectedNodeIds].sort((a, b) => (layerMap[a] || 0) - (layerMap[b] || 0));
+  for (let i = sortedConnectedIds.length - 1; i >= 0; i--) {
+    const nid = sortedConnectedIds[i];
+    const children = adjOut[nid] || [];
+    if (children.length > 0) {
+      let minChildLayer = Infinity;
+      for (const cid of children) {
+        const cl = layerMap[cid];
+        if (cl != null && cl < minChildLayer) {
+          minChildLayer = cl;
+        }
+      }
+      if (minChildLayer !== Infinity && minChildLayer > (layerMap[nid] || 0) + 1) {
+        layerMap[nid] = minChildLayer - 1;
+      }
+    }
+  }
+
+  const layers = {};
+  for (const nid of connectedNodeIds) {
+    const lay = layerMap[nid] || 0;
+    if (!layers[lay]) layers[lay] = [];
+    layers[lay].push(nid);
+  }
+
+  const sortedLayerKeys = Object.keys(layers).map(Number).sort((a, b) => a - b);
+  if (sortedLayerKeys.length === 0) {
+    layoutDisconnectedGrid(nodes, titleH);
+    graph.afterChange?.();
+    canvas.dirty_canvas = true;
+    canvas.dirty_bgcanvas = true;
+    if (canvas.setDirty) {
+      canvas.setDirty(true, true);
+    }
+    return;
+  }
+
+  const hMargin = 150;
+  const columnWidths = {};
+  for (const lay of sortedLayerKeys) {
+    const nids = layers[lay];
+    const widths = nids.map(nid => getNodeWidth(nodeMap[nid]));
+    columnWidths[lay] = Math.max(...widths, 200);
+  }
+
+  const layerX = {};
+  let currentX = 100;
+  for (const lay of sortedLayerKeys) {
+    layerX[lay] = currentX;
+    currentX += columnWidths[lay] + hMargin;
+  }
+
+  const vMargin = 60;
+  const nodeY = {};
+
+  for (const lay of sortedLayerKeys) {
+    const nids = layers[lay];
+    nids.sort((a, b) => (nodeMap[a].pos?.[1] || 0) - (nodeMap[b].pos?.[1] || 0));
+    
+    let totalH = nids.reduce((sum, nid) => sum + getNodeHeight(nodeMap[nid]), 0) + (nids.length - 1) * vMargin;
+    let currY = -totalH / 2;
+    for (const nid of nids) {
+      nodeY[nid] = currY;
+      currY += getNodeHeight(nodeMap[nid]) + vMargin;
+    }
+  }
+
+  const resolveOverlaps = (layerNodes) => {
+    if (!layerNodes || layerNodes.length <= 1) return;
+
+    layerNodes.sort((a, b) => nodeY[a] - nodeY[b]);
+
+    const blocks = layerNodes.map(nid => {
+      const h = getNodeHeight(nodeMap[nid]);
+      return {
+        nodes: [nid],
+        height: h,
+        targetY: nodeY[nid] + h / 2
+      };
+    });
+
+    let merged = true;
+    while (merged) {
+      merged = false;
+      for (let i = 0; i < blocks.length - 1; i++) {
+        const b1 = blocks[i];
+        const b2 = blocks[i+1];
+
+        const b1Bottom = b1.targetY + b1.height / 2;
+        const b2Top = b2.targetY - b2.height / 2;
+
+        if (b1Bottom + vMargin > b2Top) {
+          const newNodes = b1.nodes.concat(b2.nodes);
+          const newHeight = b1.height + b2.height + vMargin;
+          const totalTargetCenter = newNodes.reduce((sum, nid) => sum + nodeY[nid] + getNodeHeight(nodeMap[nid])/2, 0) / newNodes.length;
+
+          blocks[i] = {
+            nodes: newNodes,
+            height: newHeight,
+            targetY: totalTargetCenter
+          };
+          blocks.splice(i+1, 1);
+          merged = true;
+          break;
+        }
+      }
+    }
+
+    for (const b of blocks) {
+      let currY = b.targetY - b.height / 2;
+      for (const nid of b.nodes) {
+        nodeY[nid] = currY;
+        currY += getNodeHeight(nodeMap[nid]) + vMargin;
+      }
+    }
+  };
+
+  const maxLayer = Math.max(...sortedLayerKeys);
+
+  for (let iter = 0; iter < 5; iter++) {
+    for (const lay of sortedLayerKeys) {
+      if (lay === 0) continue;
+      for (const nid of layers[lay]) {
+        const parents = adjIn[nid] || [];
+        if (parents.length > 0) {
+          const avgY = parents.reduce((sum, pid) => sum + nodeY[pid] + getNodeHeight(nodeMap[pid])/2, 0) / parents.length;
+          nodeY[nid] = avgY - getNodeHeight(nodeMap[nid])/2;
+        }
+      }
+      resolveOverlaps(layers[lay]);
+    }
+
+    for (let i = sortedLayerKeys.length - 1; i >= 0; i--) {
+      const lay = sortedLayerKeys[i];
+      if (lay === maxLayer) continue;
+      for (const nid of layers[lay]) {
+        const children = adjOut[nid] || [];
+        if (children.length > 0) {
+          const avgY = children.reduce((sum, cid) => sum + nodeY[cid] + getNodeHeight(nodeMap[cid])/2, 0) / children.length;
+          nodeY[nid] = avgY - getNodeHeight(nodeMap[nid])/2;
+        }
+      }
+      resolveOverlaps(layers[lay]);
+    }
+  }
+
+  const globalTopY = 100;
+  const minGlobalY = globalTopY;
+
+  for (const lay of sortedLayerKeys) {
+    const nids = layers[lay];
+    if (!nids || nids.length === 0) continue;
+    const colMinY = Math.min(...nids.map(nid => nodeY[nid]));
+    const offsetY = globalTopY - colMinY;
+
+    for (const nid of nids) {
+      nodeY[nid] += offsetY;
+    }
+  }
+
+  for (const nid of connectedNodeIds) {
+    const lay = layerMap[nid];
+    const n = nodeMap[nid];
+    const x = Math.round(layerX[lay]);
+    const y = Math.round(nodeY[nid]);
+    n.pos = [x, y];
+  }
+
+  if (disconnectedNodeIds.length > 0) {
+    disconnectedNodeIds.sort((a, b) => (nodeMap[a].size?.[0] || 0) - (nodeMap[b].size?.[0] || 0));
+    let docX = 100;
+    const maxDocH = Math.max(...disconnectedNodeIds.map(nid => getNodeHeight(nodeMap[nid])));
+    const docY = Math.round(minGlobalY - 150 - maxDocH);
+    for (const nid of disconnectedNodeIds) {
+      const n = nodeMap[nid];
+      const x = Math.round(docX);
+      const y = Math.round(docY);
+      n.pos = [x, y];
+      docX += getNodeWidth(n) + 80;
+    }
+  }
+
+  graph.afterChange?.();
+  canvas.dirty_canvas = true;
+  canvas.dirty_bgcanvas = true;
+  if (canvas.setDirty) {
+    canvas.setDirty(true, true);
+  }
+}
+
 function arrangeSelection(canvas) {
   const selected = canvas.selected_nodes;
   if (!selected) return;
@@ -497,6 +820,16 @@ app.registerExtension({
       function: () => {
         if (app.canvas) arrangeSelection(app.canvas);
       }
+    },
+    {
+      id: "block-space.auto-organize",
+      label: "Auto-Organize Graph",
+      icon: "block-space-menu-icon",
+      tooltip: "Automatically lay out and organize all nodes on the graph (Ctrl+Alt+L).",
+      description: "Automatically lay out and organize all nodes on the graph (Ctrl+Alt+L).",
+      function: () => {
+        if (app.canvas) autoOrganizeGraph(app.canvas);
+      }
     }
   ],
   getSelectionToolboxCommands(selectedItem) {
@@ -535,30 +868,39 @@ app.registerExtension({
     registerBlockSpaceSettings();
     injectSettingsIcon();
 
-    // Keyboard shortcut (Ctrl+Alt+Spacebar) for Harmonize Selected Blocks layout
+    // Keyboard shortcuts for Harmonize and Auto-Organize layouts
     document.addEventListener("keydown", (e) => {
+      const activeEl = document.activeElement;
       if (
-        e.ctrlKey &&
-        e.altKey &&
-        (e.code === "Space" || e.key === " " || e.keyCode === 32)
+        activeEl &&
+        (activeEl.tagName === "INPUT" ||
+          activeEl.tagName === "TEXTAREA" ||
+          activeEl.isContentEditable)
       ) {
-        // Prevent triggering when typing in inputs/textareas
-        const activeEl = document.activeElement;
-        if (
-          activeEl &&
-          (activeEl.tagName === "INPUT" ||
-            activeEl.tagName === "TEXTAREA" ||
-            activeEl.isContentEditable)
-        ) {
-          return;
-        }
+        return;
+      }
 
-        const selected = app.canvas?.selected_nodes;
-        if (selected && Object.keys(selected).length > 1) {
+      if (e.ctrlKey && e.altKey) {
+        // Ctrl+Alt+L or Ctrl+Alt+Shift+Space for Auto-Organize
+        if (
+          e.key === "l" || e.key === "L" || e.code === "KeyL" ||
+          (e.shiftKey && (e.code === "Space" || e.key === " " || e.keyCode === 32))
+        ) {
           e.preventDefault();
           e.stopPropagation();
           if (app.canvas) {
-            arrangeSelection(app.canvas);
+            autoOrganizeGraph(app.canvas);
+          }
+        }
+        // Ctrl+Alt+Space for Harmonize
+        else if (!e.shiftKey && (e.code === "Space" || e.key === " " || e.keyCode === 32)) {
+          const selected = app.canvas?.selected_nodes;
+          if (selected && Object.keys(selected).length > 1) {
+            e.preventDefault();
+            e.stopPropagation();
+            if (app.canvas) {
+              arrangeSelection(app.canvas);
+            }
           }
         }
       }
@@ -646,24 +988,38 @@ app.registerExtension({
     return null;
   },
   getCanvasMenuItems(canvas) {
+    const items = [
+      {
+        content: `<span title="Automatically lay out and organize all nodes on the graph (Ctrl+Alt+L)." style="display:inline-flex;align-items:center;font-weight:bold;">
+          <svg class="block-space-nav-icon" viewBox="0 0 24 24" fill="none" style="width:16px;height:16px;margin-right:8px;vertical-align:middle;display:inline-block;">
+            <path d="M4 4H10V10H4V4Z" fill="#57b1ff" rx="1"/>
+            <path d="M14 14H20V20H14V14Z" fill="#8dff57" rx="1"/>
+            <path d="M14 4H20V10H14V4Z" fill="transparent" rx="1" stroke="#57b1ff" stroke-width="2"/>
+            <path d="M4 14H10V20H4V14Z" fill="transparent" rx="1" stroke="#8dff57" stroke-width="2"/>
+            <line x1="10" y1="10" x2="14" y2="14" stroke="#b57cff" stroke-width="2" stroke-linecap="round" stroke-dasharray="2 3"/>
+          </svg>Auto-Organize Graph</span>`,
+        callback: () => {
+          if (app.canvas) autoOrganizeGraph(app.canvas);
+        }
+      }
+    ];
+
     const selected = app.canvas?.selected_nodes;
     if (selected && Object.keys(selected).length > 1) {
-      return [
-        {
-          content: `<span title="Align and clean up selected node layout proportions into a grid (Ctrl+Alt+Space)." style="display:inline-flex;align-items:center;font-weight:bold;">
-            <svg class="block-space-nav-icon" viewBox="0 0 24 24" fill="none" style="width:16px;height:16px;margin-right:8px;vertical-align:middle;display:inline-block;">
-              <path d="M4 4H10V10H4V4Z" fill="#57b1ff" rx="1"/>
-              <path d="M14 14H20V20H14V14Z" fill="#8dff57" rx="1"/>
-              <path d="M14 4H20V10H14V4Z" fill="transparent" rx="1" stroke="#57b1ff" stroke-width="2"/>
-              <path d="M4 14H10V20H4V14Z" fill="transparent" rx="1" stroke="#8dff57" stroke-width="2"/>
-              <line x1="10" y1="10" x2="14" y2="14" stroke="#b57cff" stroke-width="2" stroke-linecap="round" stroke-dasharray="2 3"/>
-            </svg>Harmonize Selected Blocks</span>`,
-          callback: () => {
-            if (app.canvas) arrangeSelection(app.canvas);
-          }
+      items.push({
+        content: `<span title="Align and clean up selected node layout proportions into a grid (Ctrl+Alt+Space)." style="display:inline-flex;align-items:center;font-weight:bold;">
+          <svg class="block-space-nav-icon" viewBox="0 0 24 24" fill="none" style="width:16px;height:16px;margin-right:8px;vertical-align:middle;display:inline-block;">
+            <path d="M4 4H10V10H4V4Z" fill="#57b1ff" rx="1"/>
+            <path d="M14 14H20V20H14V14Z" fill="#8dff57" rx="1"/>
+            <path d="M14 4H20V10H14V4Z" fill="transparent" rx="1" stroke="#57b1ff" stroke-width="2"/>
+            <path d="M4 14H10V20H4V14Z" fill="transparent" rx="1" stroke="#8dff57" stroke-width="2"/>
+            <line x1="10" y1="10" x2="14" y2="14" stroke="#b57cff" stroke-width="2" stroke-linecap="round" stroke-dasharray="2 3"/>
+          </svg>Harmonize Selected Blocks</span>`,
+        callback: () => {
+          if (app.canvas) arrangeSelection(app.canvas);
         }
-      ];
+      });
     }
-    return null;
+    return items;
   }
 });
